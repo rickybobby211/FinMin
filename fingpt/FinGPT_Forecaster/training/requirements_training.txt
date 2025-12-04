@@ -1,0 +1,35 @@
+# FinGPT Forecaster - Training Requirements
+# ==========================================
+# Install with: pip install -r requirements_training.txt
+
+# Core ML
+torch>=2.2.0
+transformers>=4.32.0
+peft>=0.5.0
+accelerate>=0.21.0
+datasets>=2.14.0
+bitsandbytes>=0.41.0
+
+# Data Processing
+pandas
+numpy
+scikit-learn
+
+# Data Fetching
+yfinance
+finnhub-python
+
+# OpenAI for labeling
+openai>=1.0.0
+
+# Metrics
+rouge-score
+
+# Logging (optional)
+wandb
+tensorboard
+
+# Utilities
+tqdm
+python-dotenv
+

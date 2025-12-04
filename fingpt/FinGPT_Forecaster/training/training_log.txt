@@ -1,0 +1,11 @@
+
+============================================================
+FinGPT Forecaster - 8-bit Training
+============================================================
+Base Model: meta-llama/Llama-2-7b-chat-hf
+Dataset: ./datasets/fingpt-test-3stocks
+Max Length: 2048
+============================================================
+
+Loading model with 8-bit quantization...
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]

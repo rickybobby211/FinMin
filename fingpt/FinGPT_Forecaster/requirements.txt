@@ -1,0 +1,11 @@
+torch>=2.2.0
+transformers>=4.32.0
+python-dotenv
+bitsandbytes
+peft>=0.5.0
+pandas
+yfinance
+finnhub-python
+nvidia-ml-py3
+gradio
+accelerate
