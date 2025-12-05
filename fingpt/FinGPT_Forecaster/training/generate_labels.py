@@ -91,13 +91,40 @@ def get_prompt_by_row(symbol: str, row: pd.Series) -> tuple:
     
     head = f"From {start_date} to {end_date}, {symbol}'s stock price {term} from {row['Start Price']:.2f} to {row['End Price']:.2f}. Company news during this period are listed below:\n\n"
     
-    news = json.loads(row["News"])
-    news = [
-        f"[Headline]: {n['headline']}\n[Summary]: {n['summary']}\n"
-        for n in news 
-        if n['date'][:8] <= end_date.replace('-', '') and
-        not n['summary'].startswith("Looking for stock market analysis and research with proves results?")
-    ]
+    try:
+        news = json.loads(row["News"]) if isinstance(row["News"], str) else row["News"]
+        if not isinstance(news, list):
+            news = []
+    except:
+        news = []
+    
+    # Filter and format news
+    formatted_news = []
+    for n in news:
+        if not isinstance(n, dict):
+            continue
+        # Check if date exists and is before end_date
+        news_date = n.get('date', '')
+        if news_date:
+            try:
+                # Handle both 'YYYYMMDDHHMMSS' and 'YYYY-MM-DD' formats
+                if len(news_date) >= 8:
+                    date_str = news_date[:8] if len(news_date) >= 8 else news_date
+                    if date_str > end_date.replace('-', ''):
+                        continue
+            except:
+                pass  # If date parsing fails, include the news anyway
+        
+        # Skip spam
+        summary = n.get('summary', '')
+        if summary and summary.startswith("Looking for stock market analysis and research with proves results?"):
+            continue
+        
+        headline = n.get('headline', '')
+        if headline and summary:
+            formatted_news.append(f"[Headline]: {headline}\n[Summary]: {summary}\n")
+    
+    news = formatted_news
 
     basics = json.loads(row['Basics'])
     if basics:
