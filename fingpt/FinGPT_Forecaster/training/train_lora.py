@@ -178,10 +178,6 @@ def main(args):
     formatted_time = current_time.strftime('%Y%m%d%H%M')
     
     output_dir = f'finetuned_models/{args.run_name}_{formatted_time}'
-    
-    # Check transformers version for compatibility
-    import transformers
-    is_new_transformers = transformers.__version__ >= "4.41.0"
 
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -198,8 +194,7 @@ def main(args):
         save_steps=args.eval_steps if isinstance(args.eval_steps, int) else int(args.eval_steps * len(dataset['train'])),
         eval_steps=args.eval_steps if isinstance(args.eval_steps, int) else int(args.eval_steps * len(dataset['train'])),
         fp16=True,
-        eval_strategy=args.evaluation_strategy if is_new_transformers else None, # New name
-        evaluation_strategy=args.evaluation_strategy if not is_new_transformers else None, # Old name
+        eval_strategy=args.evaluation_strategy, # Updated for transformers >= 4.41
         remove_unused_columns=False,
         report_to='wandb' if args.use_wandb else 'none',
         run_name=args.run_name,
