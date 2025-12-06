@@ -118,13 +118,6 @@ class GenerationEvalCallback(TrainerCallback):
                 generated_texts.append(answer)
                 reference_texts.append(gt)
 
-            # metrics = calc_metrics(reference_texts, generated_texts) # Requires rouge_score
-            
-            # Ensure wandb is initialized
-            # if wandb.run is None:
-            #     wandb.init()
-                
-            # wandb.log(metrics, step=state.global_step)
             torch.cuda.empty_cache()            
 
 
@@ -184,9 +177,12 @@ def main(args):
     current_time = datetime.now()
     formatted_time = current_time.strftime('%Y%m%d%H%M')
     
-    # Set default output dir if not provided via args (though args usually has it)
     output_dir = f'finetuned_models/{args.run_name}_{formatted_time}'
     
+    # Check transformers version for compatibility
+    import transformers
+    is_new_transformers = transformers.__version__ >= "4.41.0"
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         logging_steps=args.log_interval,
@@ -202,7 +198,8 @@ def main(args):
         save_steps=args.eval_steps if isinstance(args.eval_steps, int) else int(args.eval_steps * len(dataset['train'])),
         eval_steps=args.eval_steps if isinstance(args.eval_steps, int) else int(args.eval_steps * len(dataset['train'])),
         fp16=True,
-        evaluation_strategy=args.evaluation_strategy,
+        eval_strategy=args.evaluation_strategy if is_new_transformers else None, # New name
+        evaluation_strategy=args.evaluation_strategy if not is_new_transformers else None, # Old name
         remove_unused_columns=False,
         report_to='wandb' if args.use_wandb else 'none',
         run_name=args.run_name,
@@ -247,12 +244,6 @@ def main(args):
             tokenizer, padding=True,
             return_tensors="pt"
         ),
-        # callbacks=[
-        #     GenerationEvalCallback(
-        #         eval_dataset=eval_dataset,
-        #         ignore_until_epoch=round(0.3 * args.num_epochs)
-        #     )
-        # ]
     )
     
     if torch.__version__ >= "2" and sys.platform != "win32":
@@ -300,4 +291,3 @@ if __name__ == "__main__":
         wandb.login()
         
     main(args)
-
