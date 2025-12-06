@@ -1,21 +1,26 @@
 """
-FinGPT Forecaster - Label Generation Script
-============================================
+FinGPT Forecaster - Label Generation Script (PARALLEL OPTIMIZED)
+=================================================================
 This script uses LLMs to generate training labels (analysis and predictions)
 for the prepared market data.
 
 Supported backends:
 - OpenAI (gpt-3.5-turbo, gpt-4, gpt-4o-mini) - requires OPENAI_API_KEY
+- DeepSeek (deepseek-chat) - requires DEEPSEEK_API_KEY (cheap & good!)
 - Ollama (local, FREE) - requires Ollama running locally
 
 Prerequisites:
 - For OpenAI: Set environment variable OPENAI_API_KEY
+- For DeepSeek: Set environment variable DEEPSEEK_API_KEY
 - For Ollama: Install Ollama and run `ollama pull llama3.1` or `ollama pull mistral`
 - Run prepare_latest_data.py first to generate raw data
 
 Usage:
-    # Cheap OpenAI option (recommended)
-    python generate_labels.py --data_dir ./raw_data/2024-01-01_2024-11-01 --model gpt-3.5-turbo
+    # DeepSeek - Cheap & Good (recommended) with parallel processing
+    python generate_labels.py --data_dir ./raw_data/2024-01-01_2024-11-01 --backend deepseek --parallel 5
+    
+    # OpenAI option
+    python generate_labels.py --data_dir ./raw_data/2024-01-01_2024-11-01 --model gpt-4o-mini --parallel 5
     
     # FREE local option with Ollama
     python generate_labels.py --data_dir ./raw_data/2024-01-01_2024-11-01 --backend ollama --model llama3.1
@@ -30,9 +35,12 @@ import argparse
 import finnhub
 import pandas as pd
 import requests
+import threading
 from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Tuple, Optional
 
 # Load environment variables from .env file
 load_dotenv()
@@ -225,18 +233,23 @@ def get_all_prompts(
 # GPT-4 QUERY FUNCTIONS
 # ============================================================================
 
+# Thread-safe CSV writer lock
+csv_lock = threading.Lock()
+
+
 def initialize_csv(filename: str):
     """Initialize CSV file with headers."""
     with open(filename, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        writer.writerow(["prompt", "answer", "prediction", "start_date", "end_date"])
+        writer.writerow(["prompt", "answer", "prediction", "start_date", "end_date", "index"])
 
 
-def append_to_csv(filename: str, prompt: str, answer: str, prediction: str, start_date: str, end_date: str):
-    """Append a row to the CSV file."""
-    with open(filename, mode='a', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        writer.writerow([prompt, answer, prediction, start_date, end_date])
+def append_to_csv(filename: str, prompt: str, answer: str, prediction: str, start_date: str, end_date: str, index: int = 0):
+    """Append a row to the CSV file (thread-safe)."""
+    with csv_lock:
+        with open(filename, mode='a', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow([prompt, answer, prediction, start_date, end_date, index])
 
 
 def query_ollama(prompt: str, system_prompt: str, model: str = "llama3.1", base_url: str = "http://localhost:11434") -> str:
@@ -258,6 +271,53 @@ def query_ollama(prompt: str, system_prompt: str, model: str = "llama3.1", base_
         raise Exception(f"Ollama error: {e}")
 
 
+def process_single_prompt(
+    client,
+    prompt_data: Tuple[int, str, str, str, str],  # (index, prompt, prediction, start_date, end_date)
+    csv_file: str,
+    model: str,
+    backend: str,
+    symbol: str,
+    total: int
+) -> Tuple[int, bool]:
+    """
+    Process a single prompt and save to CSV (thread-safe).
+    Returns (index, success).
+    """
+    index, prompt, prediction, start_date, end_date = prompt_data
+    
+    # Retry logic
+    for attempt in range(5):
+        try:
+            if backend == "ollama":
+                answer = query_ollama(prompt, SYSTEM_PROMPT, model)
+            else:
+                # OpenAI / DeepSeek backend (same API format)
+                completion = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1000
+                )
+                answer = completion.choices[0].message.content
+            
+            append_to_csv(csv_file, prompt, answer, prediction, str(start_date), str(end_date), index)
+            return (index, True)
+        except Exception as e:
+            if attempt < 4:
+                import time
+                time.sleep(2 ** attempt)  # Exponential backoff
+            else:
+                print(f"\n    FAILED {symbol}-{index} after 5 retries: {e}")
+                append_to_csv(csv_file, prompt, "", prediction, str(start_date), str(end_date), index)
+                return (index, False)
+    
+    return (index, False)
+
+
 def query_llm(
     client,  # OpenAI client or None for Ollama
     finnhub_client,
@@ -267,61 +327,80 @@ def query_llm(
     max_past_weeks: int = 3,
     with_basics: bool = True,
     model: str = "gpt-3.5-turbo",
-    backend: str = "openai"
+    backend: str = "openai",
+    parallel: int = 1  # Number of parallel requests
 ):
     """
     Query LLM to generate analysis for all prompts of a symbol.
     Supports OpenAI API or local Ollama.
+    Now with PARALLEL processing support!
     """
     suffix = "" if with_basics else "_nobasics"
     csv_file = f'{data_dir}/{symbol}{suffix}_gpt-4.csv'
     
     # Check for existing progress
+    done_indices = set()
     if os.path.exists(csv_file):
-        existing_df = pd.read_csv(csv_file)
-        pre_done = len(existing_df)
-        print(f"    Resuming from {pre_done} existing entries")
+        try:
+            existing_df = pd.read_csv(csv_file)
+            if 'index' in existing_df.columns:
+                done_indices = set(existing_df['index'].tolist())
+            else:
+                # Old format without index - count rows as done
+                done_indices = set(range(len(existing_df)))
+            print(f"    Resuming from {len(done_indices)} existing entries")
+        except:
+            initialize_csv(csv_file)
     else:
         initialize_csv(csv_file)
-        pre_done = 0
 
     prompts = get_all_prompts(finnhub_client, symbol, data_dir, min_past_weeks, max_past_weeks, with_basics)
     
     if not prompts:
         return
     
-    print(f"    Processing {len(prompts)} prompts ({pre_done} already done)")
+    # Filter out already done prompts
+    prompts_with_index = [
+        (i, prompt, prediction, start_date, end_date)
+        for i, (prompt, prediction, start_date, end_date) in enumerate(prompts)
+        if i not in done_indices
+    ]
+    
+    total = len(prompts)
+    remaining = len(prompts_with_index)
+    
+    if remaining == 0:
+        print(f"    {symbol} - Already complete!")
+        return
+    
+    print(f"    Processing {remaining}/{total} prompts (parallel={parallel})")
 
-    for i, (prompt, prediction, start_date, end_date) in enumerate(prompts):
-        if i < pre_done:
-            continue
-
-        print(f"    {symbol} - {i+1}/{len(prompts)}", end='\r')
-        
-        # Retry logic
-        for attempt in range(5):
-            try:
-                if backend == "ollama":
-                    answer = query_ollama(prompt, SYSTEM_PROMPT, model)
-                else:
-                    # OpenAI / DeepSeek backend (same API format)
-                    completion = client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.7,
-                        max_tokens=1000
-                    )
-                    answer = completion.choices[0].message.content
-                break
-            except Exception as e:
-                print(f"\n    Retry {attempt + 1}/5 for {symbol}-{i}: {e}")
-                if attempt == 4:
-                    answer = ""
-        
-        append_to_csv(csv_file, prompt, answer, prediction, str(start_date), str(end_date))
+    if parallel <= 1:
+        # Sequential mode (original behavior)
+        for prompt_data in prompts_with_index:
+            index = prompt_data[0]
+            print(f"    {symbol} - {index+1}/{total}", end='\r')
+            process_single_prompt(client, prompt_data, csv_file, model, backend, symbol, total)
+    else:
+        # PARALLEL MODE - Much faster!
+        completed = len(done_indices)
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = {
+                executor.submit(
+                    process_single_prompt, client, prompt_data, csv_file, model, backend, symbol, total
+                ): prompt_data[0]
+                for prompt_data in prompts_with_index
+            }
+            
+            for future in as_completed(futures):
+                index = futures[future]
+                completed += 1
+                try:
+                    result_index, success = future.result()
+                    status = "✓" if success else "✗"
+                    print(f"    {symbol} - {completed}/{total} {status}", end='\r')
+                except Exception as e:
+                    print(f"\n    Error processing {symbol}-{index}: {e}")
     
     print(f"    {symbol} - Complete!                    ")
 
@@ -343,6 +422,8 @@ def main():
     parser.add_argument('--min_weeks', type=int, default=1, help='Minimum past weeks of context')
     parser.add_argument('--max_weeks', type=int, default=4, help='Maximum past weeks of context')
     parser.add_argument('--no_basics', action='store_true', help='Process nobasics files')
+    parser.add_argument('--parallel', type=int, default=5,
+                        help='Number of parallel API requests (default: 5, use 1 for sequential)')
     args = parser.parse_args()
     
     # Setup backend
@@ -396,11 +477,12 @@ def main():
     with_basics = not args.no_basics
     
     print("=" * 60)
-    print("FinGPT Forecaster - Label Generation")
+    print("FinGPT Forecaster - Label Generation (PARALLEL)")
     print("=" * 60)
     backend_note = " (FREE!)" if args.backend == "ollama" else " (Cheap & Good!)" if args.backend == "deepseek" else ""
     print(f"Backend: {args.backend.upper()}{backend_note}")
     print(f"Model: {args.model}")
+    print(f"Parallel: {args.parallel} concurrent requests")
     print(f"Data Directory: {args.data_dir}")
     print(f"Symbols: {len(symbols)} companies")
     print(f"Context: {args.min_weeks}-{args.max_weeks} weeks")
@@ -410,7 +492,8 @@ def main():
         print(f"\nProcessing {symbol}...")
         query_llm(
             openai_client, finnhub_client, symbol, args.data_dir,
-            args.min_weeks, args.max_weeks, with_basics, args.model, args.backend
+            args.min_weeks, args.max_weeks, with_basics, args.model, args.backend,
+            args.parallel
         )
     
     print("\n" + "=" * 60)
