@@ -89,6 +89,12 @@ def main():
             help="Number of past weeks of news/price data to analyze"
         )
         
+        use_basics = st.checkbox(
+            "Use Latest Basic Financials",
+            value=True,
+            help="Include quarterly financial metrics in the analysis."
+        )
+        
         st.markdown("---")
         st.markdown("### About")
         st.info(
@@ -123,7 +129,8 @@ def main():
                 "input": {
                     "ticker": ticker,
                     "date": prediction_date.strftime("%Y-%m-%d"),
-                    "n_weeks": n_weeks
+                    "n_weeks": n_weeks,
+                    "use_basics": use_basics
                 }
             }
             

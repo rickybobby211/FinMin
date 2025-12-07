@@ -25,11 +25,6 @@ from peft import PeftModel
 # ============================================================================
 
 MODEL_ID = "meta-llama/Llama-2-7b-chat-hf"
-# Use your custom trained adapter (set via environment variable or default)
-# Options:
-#   1. HuggingFace path: "your-username/fingpt-v3-float16" (RECOMMENDED for Serverless)
-#   2. Official FinGPT: "FinGPT/fingpt-forecaster_dow30_llama2-7b_lora" (default)
-#   3. Local path: "/runpod-volume/fingpt-v3-float16_202512060944" (only works if volume mounted)
 ADAPTER_ID = os.environ.get("ADAPTER_PATH", "FinGPT/fingpt-forecaster_dow30_llama2-7b_lora")
 
 B_INST, E_INST = "[INST]", "[/INST]"
@@ -81,12 +76,9 @@ def load_model():
     )
     
     # Load LoRA adapter
-    # If adapter is from HuggingFace, pass token for private repos
     if "/" in ADAPTER_ID and not os.path.exists(ADAPTER_ID):
-        # HuggingFace path - pass token for private repos
         model = PeftModel.from_pretrained(base_model, ADAPTER_ID, token=hf_token)
     else:
-        # Local path
         model = PeftModel.from_pretrained(base_model, ADAPTER_ID)
     model = model.eval()
     
@@ -154,7 +146,7 @@ def get_news(symbol, data):
                     "date": datetime.fromtimestamp(n['datetime']).strftime('%Y%m%d%H%M%S'),
                     "headline": n['headline'],
                     "summary": n['summary'],
-                } for n in weekly_news[:10]  # Limit to 10 news items
+                } for n in weekly_news[:10]
             ]
             weekly_news.sort(key=lambda x: x['date'])
         except Exception as e:
@@ -183,7 +175,42 @@ def get_company_prompt(symbol):
         return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
 
 
-def construct_prompt(ticker, curday, n_weeks):
+def get_current_basics(symbol, curday):
+    """Fetch basic financials."""
+    if finnhub_client is None:
+        return None
+
+    try:
+        basic_financials = finnhub_client.company_basic_financials(symbol, 'all')
+        if not basic_financials.get('series'):
+             return None
+        
+        final_basics, basic_list, basic_dict = [], [], defaultdict(dict)
+        
+        for metric, value_list in basic_financials['series']['quarterly'].items():
+            for value in value_list:
+                basic_dict[value['period']].update({metric: value['v']})
+
+        for k, v in basic_dict.items():
+            v.update({'period': k})
+            basic_list.append(v)
+            
+        basic_list.sort(key=lambda x: x['period'])
+        
+        # Find latest basics before curday
+        target_basic = None
+        for basic in basic_list[::-1]:
+            if basic['period'] <= curday:
+                target_basic = basic
+                break
+                
+        return target_basic
+    except Exception as e:
+        print(f"Basics fetch error: {e}")
+        return None
+
+
+def construct_prompt(ticker, curday, n_weeks, use_basics=True):
     """Build the full prompt for the model."""
     steps = [n_weeks_before(curday, n) for n in range(n_weeks + 1)][::-1]
     
@@ -209,6 +236,16 @@ def construct_prompt(ticker, curday, n_weeks):
         else:
             prompt += "No news reported.\n"
     
+    # Add financials if requested
+    if use_basics:
+        basics = get_current_basics(ticker, curday)
+        if basics:
+            basics_str = "Some recent basic financials of {}, reported at {}, are presented below:\n\n[Basic Financials]:\n\n".format(
+                ticker, basics['period']) + "\n".join(f"{k}: {v}" for k, v in basics.items() if k != 'period')
+            prompt += "\n" + basics_str
+        else:
+            prompt += "\n[Basic Financials]:\n\nNo basic financial reported."
+    
     period = f"{curday} to {n_weeks_before(curday, -1)}"
     prompt += f"\nBased on all the information before {curday}, let's first analyze the positive developments and potential concerns for {ticker}. Come up with 2-4 most important factors respectively and keep them concise. Then make your prediction of the {ticker} stock price movement for next week ({period}). Provide a summary analysis to support your prediction."
     
@@ -220,7 +257,7 @@ def construct_prompt(ticker, curday, n_weeks):
 # INFERENCE
 # ============================================================================
 
-def predict(ticker, prediction_date=None, n_weeks=3):
+def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True):
     """Generate stock prediction."""
     load_model()  # Ensure model is loaded
     
@@ -228,7 +265,7 @@ def predict(ticker, prediction_date=None, n_weeks=3):
         prediction_date = date.today().strftime("%Y-%m-%d")
     
     # Build prompt
-    prompt = construct_prompt(ticker, prediction_date, n_weeks)
+    prompt = construct_prompt(ticker, prediction_date, n_weeks, use_basics)
     
     # Tokenize
     inputs = tokenizer(prompt, return_tensors='pt', padding=False)
@@ -261,15 +298,6 @@ def predict(ticker, prediction_date=None, n_weeks=3):
 def handler(event):
     """
     RunPod Serverless handler function.
-    
-    Input format:
-    {
-        "input": {
-            "ticker": "AAPL",
-            "date": "2025-12-04",  # optional
-            "n_weeks": 3           # optional
-        }
-    }
     """
     try:
         input_data = event.get("input", {})
@@ -280,12 +308,14 @@ def handler(event):
         
         prediction_date = input_data.get("date")
         n_weeks = input_data.get("n_weeks", 3)
+        use_basics = input_data.get("use_basics", True)
         
         # Generate prediction
         prediction = predict(
             ticker=ticker.upper(),
             prediction_date=prediction_date,
-            n_weeks=n_weeks
+            n_weeks=n_weeks,
+            use_basics=use_basics
         )
         
         return {
