@@ -10,16 +10,14 @@ from datetime import date
 
 # RunPod Configuration
 RUNPOD_API_ID = "lfahu5e6q9pmfq"  # Your Endpoint ID
-API_URL = f"https://api.runpod.ai/v2/{RUNPOD_API_ID}/runsync"
+BASE_URL = f"https://api.runpod.ai/v2/{RUNPOD_API_ID}"
 
-# Try to get API KEY from Streamlit secrets, environment variable, or fallback (for local dev)
+# Try to get API KEY from Streamlit secrets, environment variable, or fallback
 try:
     API_KEY = st.secrets["RUNPOD_API_KEY"]
 except (FileNotFoundError, KeyError):
-    # Fallback for local testing if secrets.toml is missing (NOT RECOMMENDED FOR PRODUCTION)
-    # You should create a .streamlit/secrets.toml file locally for testing
-    API_KEY = "YOUR_API_KEY_HERE" 
-    # st.warning("Using hardcoded API Key. Setup secrets for production.")
+    # Fallback for local testing - Remember to remove before push!
+    API_KEY = "YOUR_API_KEY_HERE"
 
 # Page Config
 st.set_page_config(
@@ -52,6 +50,63 @@ st.markdown("""
 # APP LOGIC
 # ============================================================================
 
+def run_prediction(payload, headers):
+    """Start prediction job and poll for status."""
+    
+    # 1. Start Job (Async)
+    run_url = f"{BASE_URL}/run"
+    response = requests.post(run_url, json=payload, headers=headers)
+    
+    if response.status_code != 200:
+        return {"error": f"Failed to start job: {response.status_code}", "details": response.text}
+    
+    job_data = response.json()
+    job_id = job_data.get("id")
+    
+    if not job_id:
+         return {"error": "No Job ID returned", "details": job_data}
+         
+    # 2. Poll for completion
+    status_url = f"{BASE_URL}/status/{job_id}"
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    start_time = time.time()
+    
+    while True:
+        # Check timeout (e.g. 5 mins)
+        if time.time() - start_time > 300:
+            return {"error": "Timeout waiting for prediction"}
+            
+        time.sleep(3) # Wait between polls
+        
+        status_res = requests.get(status_url, headers=headers)
+        if status_res.status_code != 200:
+            continue
+            
+        status_data = status_res.json()
+        status = status_data.get("status")
+        
+        if status == "COMPLETED":
+            progress_bar.progress(100)
+            status_text.text("Analysis Complete!")
+            return status_data
+            
+        elif status == "FAILED":
+            return {"error": "Job Failed on Server", "details": status_data}
+            
+        elif status == "IN_QUEUE":
+            status_text.text("Job in Queue... (Scaling up GPU)")
+            progress_bar.progress(10)
+            
+        elif status == "IN_PROGRESS":
+            duration = time.time() - start_time
+            status_text.text(f"AI Analyzing Market Data... ({int(duration)}s)")
+            # Fake progress for user feedback
+            prog = min(90, 10 + int(duration))
+            progress_bar.progress(prog)
+
+
 def main():
     # Sidebar
     with st.sidebar:
@@ -72,8 +127,6 @@ def main():
             index=DOW_30.index("AAPL"), # Default to AAPL
             help="Select a company from the Dow Jones Industrial Average."
         )
-        
-        # selected_ticker logic removed as we stick to Dow 30
         
         prediction_date = st.date_input(
             "Prediction Date", 
@@ -118,12 +171,7 @@ def main():
         generate_btn = st.button("🚀 Generate Analysis", type="primary", use_container_width=True)
 
     if generate_btn:
-        if not ticker:
-            st.error("Please enter a ticker symbol.")
-            return
-
-        with st.spinner(f"🤖 Analyzing {ticker} market data... (Typical wait: 30-40s)"):
-            
+        with st.container():
             # Prepare payload
             payload = {
                 "input": {
@@ -139,62 +187,36 @@ def main():
                 "Content-Type": "application/json"
             }
             
-            try:
-                start_time = time.time()
-                response = requests.post(API_URL, json=payload, headers=headers, timeout=600)
-                elapsed_time = time.time() - start_time
+            result = run_prediction(payload, headers)
+            
+            if "error" in result:
+                st.error(f"❌ {result['error']}")
+                if "details" in result:
+                    st.json(result["details"])
+            else:
+                output = result.get("output", result)
                 
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    # Handle RunPod specific error fields
-                    if "error" in result:
-                        st.error(f"❌ API Error: {result['error']}")
-                        st.json(result)
-                        return
-
-                    # Extract output
-                    # RunPod sync endpoint returns structure: {"id": "...", "status": "COMPLETED", "output": {...}}
-                    output = result.get("output", result)
-                    
-                    if not output or (isinstance(output, dict) and "error" in output):
-                         err_msg = output.get("error", "Unknown error") if isinstance(output, dict) else "Empty response"
-                         st.error(f"❌ Model Error: {err_msg}")
-                         return
-
-                    # Success!
-                    st.success(f"✅ Analysis completed in {elapsed_time:.1f} seconds")
-                    
-                    # Display Results
-                    st.markdown("---")
-                    
-                    # Parse the prediction text to make it look nicer
-                    raw_text = output.get('prediction', 'No prediction text returned.')
-                    
-                    # Display Ticker & Date Header
-                    st.subheader(f"📊 Analysis for {output.get('ticker', ticker)}")
-                    st.caption(f"Target Week: {output.get('date', prediction_date)}")
-                    
-                    # Display the text in a nice box
-                    st.markdown(f"""
-                    <div class="prediction-box">
-                        {raw_text.replace(chr(10), '<br>')}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Raw JSON expander for debugging
-                    with st.expander("View Raw API Response"):
-                        st.json(result)
-                        
-                else:
-                    st.error(f"❌ Server Error ({response.status_code})")
-                    st.code(response.text)
-                    
-            except requests.exceptions.Timeout:
-                st.error("❌ Request timed out. The model is taking too long to respond.")
-            except Exception as e:
-                st.error(f"❌ Connection Error: {str(e)}")
+                # Check for internal error in output
+                if isinstance(output, dict) and "error" in output:
+                     st.error(f"❌ Model Error: {output['error']}")
+                     return
+                
+                # Display Results
+                st.markdown("---")
+                
+                raw_text = output.get('prediction', 'No prediction text returned.')
+                
+                st.subheader(f"📊 Analysis for {output.get('ticker', ticker)}")
+                st.caption(f"Target Week: {output.get('date', prediction_date)}")
+                
+                st.markdown(f"""
+                <div class="prediction-box">
+                    {raw_text.replace(chr(10), '<br>')}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                with st.expander("View Raw API Response"):
+                    st.json(result)
 
 if __name__ == "__main__":
     main()
-
