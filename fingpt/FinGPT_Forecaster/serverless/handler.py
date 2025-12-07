@@ -25,9 +25,12 @@ from peft import PeftModel
 # ============================================================================
 
 MODEL_ID = "meta-llama/Llama-2-7b-chat-hf"
-ADAPTER_ID = "FinGPT/fingpt-forecaster_dow30_llama2-7b_lora"
-# Or use your custom trained adapter:
-# ADAPTER_ID = "/runpod-volume/fingpt-2025"
+# Use your custom trained adapter (set via environment variable or default)
+# Options:
+#   1. HuggingFace path: "your-username/fingpt-v3-float16" (RECOMMENDED for Serverless)
+#   2. Official FinGPT: "FinGPT/fingpt-forecaster_dow30_llama2-7b_lora" (default)
+#   3. Local path: "/runpod-volume/fingpt-v3-float16_202512060944" (only works if volume mounted)
+ADAPTER_ID = os.environ.get("ADAPTER_PATH", "FinGPT/fingpt-forecaster_dow30_llama2-7b_lora")
 
 B_INST, E_INST = "[INST]", "[/INST]"
 B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
@@ -41,7 +44,7 @@ SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list
 1. ...
 
 [Prediction & Analysis]
-Prediction: ...
+Prediction: Up by 2-3%
 Analysis: ..."""
 
 # Global model (loaded once, reused for all requests)
@@ -78,7 +81,13 @@ def load_model():
     )
     
     # Load LoRA adapter
-    model = PeftModel.from_pretrained(base_model, ADAPTER_ID)
+    # If adapter is from HuggingFace, pass token for private repos
+    if "/" in ADAPTER_ID and not os.path.exists(ADAPTER_ID):
+        # HuggingFace path - pass token for private repos
+        model = PeftModel.from_pretrained(base_model, ADAPTER_ID, token=hf_token)
+    else:
+        # Local path
+        model = PeftModel.from_pretrained(base_model, ADAPTER_ID)
     model = model.eval()
     
     # Load tokenizer
@@ -229,7 +238,7 @@ def predict(ticker, prediction_date=None, n_weeks=3):
     with torch.no_grad():
         res = model.generate(
             **inputs,
-            max_new_tokens=512,
+            max_new_tokens=2048,
             do_sample=True,
             temperature=0.7,
             eos_token_id=tokenizer.eos_token_id,
@@ -291,4 +300,3 @@ def handler(event):
 
 # Start the serverless worker
 runpod.serverless.start({"handler": handler})
-

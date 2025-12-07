@@ -79,9 +79,10 @@ FINGPT_ADAPTER = 'FinGPT/fingpt-forecaster_dow30_llama2-7b_lora'
 
 class GenerationEvalCallback(TrainerCallback):
     
-    def __init__(self, eval_dataset, ignore_until_epoch=0):
+    def __init__(self, eval_dataset, ignore_until_epoch=0, use_wandb=False):
         self.eval_dataset = eval_dataset
         self.ignore_until_epoch = ignore_until_epoch
+        self.use_wandb = use_wandb
     
     def on_evaluate(self, args, state: TrainerState, control: TrainerControl, **kwargs):
         
@@ -117,6 +118,21 @@ class GenerationEvalCallback(TrainerCallback):
 
                 generated_texts.append(answer)
                 reference_texts.append(gt)
+
+            # Calculate metrics if available (optional)
+            try:
+                from utils import calc_metrics
+                metrics = calc_metrics(reference_texts, generated_texts)
+                print(f"\nEvaluation Metrics: {metrics}")
+                
+                # Log to wandb if enabled
+                if self.use_wandb and wandb.run is not None:
+                    wandb.log(metrics, step=state.global_step)
+            except ImportError:
+                print("\n⚠️  Metrics calculation skipped (rouge_score not available)")
+                print("   Install with: pip install rouge-score")
+            except Exception as e:
+                print(f"\n⚠️  Metrics calculation failed: {e}")
 
             torch.cuda.empty_cache()            
 
@@ -229,6 +245,23 @@ def main(args):
     model.print_trainable_parameters()
     
     # Train
+    # Optional: Add generation evaluation callback (requires rouge-score)
+    callbacks = []
+    try:
+        import rouge_score  # Check if available
+        callbacks.append(
+            GenerationEvalCallback(
+                eval_dataset=eval_dataset,
+                ignore_until_epoch=round(0.3 * args.num_epochs),
+                use_wandb=args.use_wandb
+            )
+        )
+        print("✅ Generation evaluation callback enabled (will calculate ROUGE metrics)")
+    except ImportError:
+        print("ℹ️  Generation evaluation callback disabled (install rouge-score to enable)")
+    except Exception as e:
+        print(f"⚠️  Could not add evaluation callback: {e}")
+    
     trainer = Trainer(
         model=model, 
         args=training_args, 
@@ -239,6 +272,7 @@ def main(args):
             tokenizer, padding=True,
             return_tensors="pt"
         ),
+        callbacks=callbacks if callbacks else None,
     )
     
     if torch.__version__ >= "2" and sys.platform != "win32":
