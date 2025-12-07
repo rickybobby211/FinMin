@@ -74,9 +74,9 @@ def run_prediction(payload, headers):
     start_time = time.time()
     
     while True:
-        # Check timeout (e.g. 5 mins)
-        if time.time() - start_time > 300:
-            return {"error": "Timeout waiting for prediction"}
+        # Check timeout (e.g. 15 mins for cold starts)
+        if time.time() - start_time > 900:
+            return {"error": "Timeout waiting for prediction (RunPod took > 15m)"}
             
         time.sleep(3) # Wait between polls
         
