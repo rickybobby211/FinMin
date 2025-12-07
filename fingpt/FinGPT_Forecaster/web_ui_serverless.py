@@ -59,7 +59,21 @@ def main():
         st.title("FinGPT Forecaster")
         st.markdown("---")
         
-        ticker = st.text_input("Ticker Symbol", value="AAPL", help="e.g. AAPL, MSFT, NVDA").upper()
+        # Dow 30 Tickers
+        DOW_30 = [
+            "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW",
+            "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM",
+            "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"
+        ]
+        
+        ticker = st.selectbox(
+            "Select Ticker (Dow 30)",
+            options=DOW_30,
+            index=DOW_30.index("AAPL"), # Default to AAPL
+            help="Select a company from the Dow Jones Industrial Average."
+        )
+        
+        # selected_ticker logic removed as we stick to Dow 30
         
         prediction_date = st.date_input(
             "Prediction Date", 
