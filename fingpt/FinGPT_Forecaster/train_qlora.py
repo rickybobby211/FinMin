@@ -108,7 +108,11 @@ def main(args):
     tokenizer.padding_side = "right"
     
     # load data
-    dataset_fname = "./data/" + args.dataset
+    if os.path.exists(args.dataset):
+        dataset_fname = args.dataset
+    else:
+        dataset_fname = "./data/" + args.dataset
+
     dataset_list = load_dataset(dataset_fname, args.from_remote)
     
     dataset_train = datasets.concatenate_datasets([d['train'] for d in dataset_list]).shuffle(seed=42)
