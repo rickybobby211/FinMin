@@ -31,6 +31,7 @@ import re
 import csv
 import json
 import random
+from datetime import datetime
 import argparse
 import finnhub
 import pandas as pd
@@ -100,15 +101,15 @@ def get_prompt_by_row(symbol: str, row: pd.Series) -> tuple:
     head = f"From {start_date} to {end_date}, {symbol}'s stock price {term} from {row['Start Price']:.2f} to {row['End Price']:.2f}. Company news during this period are listed below:\n\n"
     
     try:
-        news = json.loads(row["News"]) if isinstance(row["News"], str) else row["News"]
-        if not isinstance(news, list):
-            news = []
+        news_raw = json.loads(row["News"]) if isinstance(row["News"], str) else row["News"]
+        if not isinstance(news_raw, list):
+            news_raw = []
     except:
-        news = []
+        news_raw = []
     
     # Filter and format news
     formatted_news = []
-    for n in news:
+    for n in news_raw:
         if not isinstance(n, dict):
             continue
         # Check if date exists and is before end_date
@@ -132,8 +133,6 @@ def get_prompt_by_row(symbol: str, row: pd.Series) -> tuple:
         if headline and summary:
             formatted_news.append(f"[Headline]: {headline}\n[Summary]: {summary}\n")
     
-    news = formatted_news
-
     basics = json.loads(row['Basics'])
     if basics:
         basics_str = f"Some recent basic financials of {symbol}, reported at {basics['period']}, are presented below:\n\n[Basic Financials]:\n\n"
@@ -141,14 +140,145 @@ def get_prompt_by_row(symbol: str, row: pd.Series) -> tuple:
     else:
         basics_str = "[Basic Financials]:\n\nNo basic financial reported."
     
-    return head, news, basics_str
+    return head, formatted_news, basics_str, news_raw
 
 
-def sample_news(news: list, k: int = 5) -> list:
-    """Randomly sample k news items."""
+def _parse_news_date(date_str: str) -> Optional[datetime]:
+    """Parse finnhub news date strings into datetime; return None on failure."""
+    if not date_str:
+        return None
+    try:
+        # Support both YYYYMMDDHHMMSS and YYYY-MM-DD
+        if "-" in date_str:
+            return datetime.strptime(date_str[:10], "%Y-%m-%d")
+        return datetime.strptime(date_str[:14], "%Y%m%d%H%M%S")
+    except Exception:
+        return None
+
+
+def _score_news_item(item: dict, end_date: Optional[str]) -> tuple:
+    """
+    Score news for relevance: prefer recent items (closest to end_date) and with richer text.
+    Uses Strategy-like scoring so we can swap heuristics easily.
+    """
+    end_dt = _parse_news_date(end_date) if end_date else None
+    news_dt = _parse_news_date(item.get("date", ""))
+
+    # Recency: newer is better; if end_date known, distance to end_date (negative for closer)
+    if news_dt and end_dt:
+        recency_score = -(abs((end_dt - news_dt).total_seconds()))
+    elif news_dt:
+        recency_score = news_dt.timestamp()
+    else:
+        recency_score = float("-inf")
+
+    # Information richness: longer headline+summary treated as more informative
+    headline = item.get("headline") or ""
+    summary = item.get("summary") or ""
+    info_len = len(headline) + len(summary)
+
+    # Keyword boosting: Prefer financial/business keywords to catch major deals (e.g. Alibaba/Apple partnership)
+    # even if they are shorter or slightly older.
+    keywords = ["partnership", "deal", "earnings", "revenue", "profit", "loss", "acquisition", "merger", "upgrade", "downgrade"]
+    content = (headline + " " + summary).lower()
+    keyword_score = sum(100 for kw in keywords if kw in content)
+
+    return (recency_score, keyword_score + info_len)
+
+
+def rank_news_by_relevance(news: list, end_date: Optional[str]) -> list:
+    """Return news sorted by heuristic relevance (recency + info richness)."""
+    valid_news = [n for n in news if isinstance(n, dict)]
+    return sorted(valid_news, key=lambda n: _score_news_item(n, end_date), reverse=True)
+
+
+def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str) -> list:
+    """
+    Use LLM to select the most impactful news for a specific stock.
+    """
+    if not news:
+        return []
+    
+    # Prepare news list for LLM
+    news_text = ""
+    valid_news = [n for n in news if isinstance(n, dict)]
+    for i, n in enumerate(valid_news):
+        headline = n.get('headline', 'No Headline')
+        summary = n.get('summary', 'No Summary')
+        date = n.get('date', 'Unknown Date')
+        news_text += f"ID {i}: [{date}] {headline} - {summary}\n"
+
+    system_prompt = f"""You are a financial analyst specializing in {symbol}. 
+Your task is to select the {k} most important news items from the provided list that are likely to have the biggest impact on {symbol}'s stock price direction.
+Focus on:
+1. Earnings releases and financial guidance
+2. Major product launches or regulatory approvals
+3. Mergers, acquisitions, and strategic partnerships
+4. Macroeconomic events directly affecting the sector
+5. Significant legal or regulatory actions
+
+Ignore generic market commentary or minor fluff unless it's the only info available.
+Return ONLY the IDs of the selected news items as a JSON list, e.g., [0, 4, 12]. Do not include any other text."""
+
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": news_text}
+            ],
+            temperature=0.0,
+            max_tokens=100
+        )
+        response = completion.choices[0].message.content.strip()
+        
+        # Extract IDs using regex to be robust
+        import re
+        ids = [int(x) for x in re.findall(r'\d+', response)]
+        
+        # Return selected news items in order
+        selected = [valid_news[i] for i in ids if i < len(valid_news)]
+        return selected[:k]
+    except Exception as e:
+        print(f"    LLM News Selection Failed: {e}. Falling back to relevance scoring.")
+        return rank_news_by_relevance(news, None)[:k]
+
+
+def sample_news(news: list, k: int = 5, strategy: str = "relevant", end_date: Optional[str] = None, 
+                symbol: str = "", client = None, model: str = "") -> list:
+    """
+    Select up to k news items using a strategy:
+    - "relevant": deterministic top-k by recency + information richness + keywords
+    - "random": random sample
+    - "llm": use LLM to pick most impactful news for the symbol
+    """
     if len(news) <= k:
         return news
-    return [news[i] for i in sorted(random.sample(range(len(news)), k))]
+
+    if strategy == "random":
+        return [news[i] for i in sorted(random.sample(range(len(news)), k))]
+    
+    if strategy == "llm" and client and symbol:
+        return rank_news_with_llm(news, k, symbol, client, model)
+
+    ranked = rank_news_by_relevance(news, end_date)
+    return ranked[:k]
+
+
+def format_news_items(news_items: list) -> list:
+    """
+    Format raw news dicts (or preformatted strings) into prompt-ready strings.
+    """
+    formatted = []
+    for item in news_items:
+        if isinstance(item, dict):
+            headline = item.get("headline", "")
+            summary = item.get("summary", "")
+            if headline or summary:
+                formatted.append(f"[Headline]: {headline}\n[Summary]: {summary}\n")
+        elif isinstance(item, str):
+            formatted.append(item)
+    return formatted
 
 
 def map_bin_label(bin_lb: str) -> str:
@@ -172,7 +302,10 @@ def get_all_prompts(
     data_dir: str,
     min_past_weeks: int = 1, 
     max_past_weeks: int = 3, 
-    with_basics: bool = True
+    with_basics: bool = True,
+    news_strategy: str = "relevant",
+    client = None,  # Pass LLM client down
+    model: str = "" # Pass model name down
 ) -> list:
     """
     Generate all prompts for a symbol from the prepared data.
@@ -202,14 +335,24 @@ def get_all_prompts(
             idx = min(random.choice(range(min_past_weeks, max_past_weeks + 1)), len(prev_rows))
             for i in range(-idx, 0):
                 prompt += "\n" + prev_rows[i][0]
-                sampled_news = sample_news(prev_rows[i][1], min(5, len(prev_rows[i][1])))
-                if sampled_news:
-                    prompt += "\n".join(sampled_news)
+                raw_news = prev_rows[i][3] if len(prev_rows[i]) > 3 else prev_rows[i][1]
+                sampled_news = sample_news(
+                    raw_news,
+                    min(5, len(raw_news)),
+                    strategy=news_strategy,
+                    end_date=row['End Date'],
+                    symbol=symbol,
+                    client=client,
+                    model=model
+                )
+                formatted = format_news_items(sampled_news)
+                if formatted:
+                    prompt += "\n".join(formatted)
                 else:
                     prompt += "No relative news reported."
 
-        head, news, basics = get_prompt_by_row(symbol, row)
-        prev_rows.append((head, news, basics))
+        head, news_formatted, basics, news_raw = get_prompt_by_row(symbol, row)
+        prev_rows.append((head, news_formatted, basics, news_raw))
         
         if len(prev_rows) > max_past_weeks:
             prev_rows.pop(0)
@@ -328,7 +471,8 @@ def query_llm(
     with_basics: bool = True,
     model: str = "gpt-3.5-turbo",
     backend: str = "openai",
-    parallel: int = 1  # Number of parallel requests
+    parallel: int = 1,  # Number of parallel requests
+    news_strategy: str = "relevant"
 ):
     """
     Query LLM to generate analysis for all prompts of a symbol.
@@ -354,7 +498,17 @@ def query_llm(
     else:
         initialize_csv(csv_file)
 
-    prompts = get_all_prompts(finnhub_client, symbol, data_dir, min_past_weeks, max_past_weeks, with_basics)
+    prompts = get_all_prompts(
+        finnhub_client,
+        symbol,
+        data_dir,
+        min_past_weeks,
+        max_past_weeks,
+        with_basics,
+        news_strategy,
+        client=client,
+        model=model
+    )
     
     if not prompts:
         return
@@ -424,6 +578,9 @@ def main():
     parser.add_argument('--no_basics', action='store_true', help='Process nobasics files')
     parser.add_argument('--parallel', type=int, default=5,
                         help='Number of parallel API requests (default: 5, use 1 for sequential)')
+    parser.add_argument('--news_strategy', type=str, default='relevant',
+                        choices=['relevant', 'random', 'llm'],
+                        help='How to pick news snippets: relevant (ranked), random, or llm (DeepSeek picks)')
     args = parser.parse_args()
     
     # Setup backend
@@ -493,7 +650,7 @@ def main():
         query_llm(
             openai_client, finnhub_client, symbol, args.data_dir,
             args.min_weeks, args.max_weeks, with_basics, args.model, args.backend,
-            args.parallel
+            args.parallel, args.news_strategy
         )
     
     print("\n" + "=" * 60)

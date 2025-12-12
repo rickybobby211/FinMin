@@ -16,13 +16,13 @@ from functools import partial
 from tqdm import tqdm
 from utils import *
 
-# LoRA
+# LoRA / QLoRA path
 from peft import (
     TaskType,
     LoraConfig,
     get_peft_model,
     get_peft_model_state_dict,
-    prepare_model_for_int8_training,
+    prepare_model_for_kbit_training,
     set_peft_model_state_dict,   
 )
 
@@ -33,9 +33,10 @@ os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
 
 class GenerationEvalCallback(TrainerCallback):
     
-    def __init__(self, eval_dataset, ignore_until_epoch=0):
+    def __init__(self, eval_dataset, base_model, ignore_until_epoch=0):
         self.eval_dataset = eval_dataset
         self.ignore_until_epoch = ignore_until_epoch
+        self.is_qwen = "qwen" in base_model.lower()
     
     def on_evaluate(self, args, state: TrainerState, control: TrainerControl, **kwargs):
         
@@ -60,8 +61,17 @@ class GenerationEvalCallback(TrainerCallback):
                     **inputs, 
                     use_cache=True
                 )
-                output = tokenizer.decode(res[0], skip_special_tokens=True)
-                answer = re.sub(r'.*\[/INST\]\s*', '', output, flags=re.DOTALL)
+                # Decode with special tokens kept to parse ChatML when needed
+                full_output = tokenizer.decode(res[0], skip_special_tokens=False)
+                if self.is_qwen:
+                    if "<|im_start|>assistant" in full_output:
+                        answer = full_output.split("<|im_start|>assistant")[-1]
+                        answer = answer.replace("<|im_end|>", "").strip()
+                    else:
+                        answer = full_output.strip()
+                else:
+                    output = tokenizer.decode(res[0], skip_special_tokens=True)
+                    answer = re.sub(r'.*\\[/INST\\]\\s*', '', output, flags=re.DOTALL)
 
                 generated_texts.append(answer)
                 reference_texts.append(gt)
@@ -83,10 +93,10 @@ def main(args):
         
     model_name = parse_model_name(args.base_model, args.from_remote)
     
-    # load model (original path retained; QLoRA variant moved to train_qlora.py)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        # load_in_8bit=True,
+    # load model using factory from utils.py (QLoRA-friendly)
+    model = load_model(
+        model_name, 
+        load_in_4bit=args.load_in_4bit,
         trust_remote_code=True
     )
 
@@ -139,7 +149,11 @@ def main(args):
         save_steps=args.eval_steps,
         eval_steps=args.eval_steps,
         fp16=True,
-        deepspeed=args.ds_config,
+        load_best_model_at_end=True,            # Load the best model when finished
+        metric_for_best_model="eval_loss",      # Monitor Validation Loss
+        greater_is_better=False,                # Lower loss is better
+        save_strategy=args.evaluation_strategy, # Ensure save strategy matches eval strategy
+        deepspeed=args.ds_config if not args.load_in_4bit else None, # Disable DeepSpeed if 4-bit quantization is used
         evaluation_strategy=args.evaluation_strategy,
         remove_unused_columns=False,
         report_to='wandb',
@@ -150,9 +164,11 @@ def main(args):
     model.enable_input_require_grads()
     model.is_parallelizable = True
     model.model_parallel = True
-    model.model.config.use_cache = False
+    # use_cache is safely set via model.config for ChatGLM/Qwen/LLaMA
+    model.config.use_cache = False
     
-    # model = prepare_model_for_int8_training(model)
+    if args.load_in_4bit:
+        model = prepare_model_for_kbit_training(model)
 
     # setup peft
     peft_config = LoraConfig(
@@ -180,6 +196,7 @@ def main(args):
         callbacks=[
             GenerationEvalCallback(
                 eval_dataset=eval_dataset,
+                base_model=args.base_model,
                 ignore_until_epoch=round(0.3 * args.num_epochs)
             )
         ]
@@ -202,9 +219,9 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", default='local-test', type=str)
     parser.add_argument("--dataset", required=True, type=str)
     parser.add_argument("--test_dataset", type=str)
-    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2'])
+    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2', 'qwen2.5-32b'])
     parser.add_argument("--max_length", default=512, type=int)
-    parser.add_argument("--batch_size", default=4, type=int, help="The train batch size per device")
+    parser.add_argument("--batch_size", default=1, type=int, help="The train batch size per device")
     parser.add_argument("--learning_rate", default=1e-4, type=float, help="The learning rate")
     parser.add_argument("--weight_decay", default=0.01, type=float, help="weight decay")
     parser.add_argument("--num_epochs", default=8, type=float, help="The training epochs")
@@ -217,8 +234,10 @@ if __name__ == "__main__":
     parser.add_argument("--instruct_template", default='default')
     parser.add_argument("--evaluation_strategy", default='steps', type=str)    
     parser.add_argument("--eval_steps", default=0.1, type=float)    
-    parser.add_argument("--from_remote", default=False, type=bool)    
+    parser.add_argument("--from_remote", default=False, type=bool)
+    parser.add_argument("--load_in_4bit", action='store_true', help="Load model in 4-bit precision")    
     args = parser.parse_args()
     
     wandb.login()
     main(args)
+

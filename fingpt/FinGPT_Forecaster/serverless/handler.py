@@ -30,7 +30,26 @@ ADAPTER_ID = os.environ.get("ADAPTER_PATH", "FinGPT/fingpt-forecaster_dow30_llam
 B_INST, E_INST = "[INST]", "[/INST]"
 B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
 
-SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list the positive developments and potential concerns for companies based on relevant news and basic financials from the past weeks, then provide an analysis and prediction for the companies' stock price movement for the upcoming week. Your answer format should be as follows:
+SYSTEM_PROMPT = """You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+
+Your answer format must be as follows:
 
 [Positive Developments]:
 1. ...
@@ -39,8 +58,9 @@ SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list
 1. ...
 
 [Prediction & Analysis]
-Prediction: Up by 2-3%
-Analysis: ..."""
+Analysis: ...
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%"""
 
 # Global model (loaded once, reused for all requests)
 model = None
@@ -141,14 +161,41 @@ def get_news(symbol, data):
         try:
             time.sleep(0.5)  # Rate limit
             weekly_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
-            weekly_news = [
-                {
+            
+            # Filter and rank news by relevance
+            ranked_news = []
+            for n in weekly_news:
+                score = 0
+                headline = n.get('headline', '')
+                summary = n.get('summary', '')
+                content = f"{headline} {summary}".lower()
+                symbol_lower = symbol.lower()
+                
+                # Relevance scoring
+                if symbol_lower in content:
+                    score += 10
+                if any(kw in content for kw in ['earnings', 'revenue', 'profit', 'dividend', 'merger', 'acquisition', 'growth']):
+                    score += 2
+                
+                ranked_news.append({
                     "date": datetime.fromtimestamp(n['datetime']).strftime('%Y%m%d%H%M%S'),
-                    "headline": n['headline'],
-                    "summary": n['summary'],
-                } for n in weekly_news[:10]
-            ]
-            weekly_news.sort(key=lambda x: x['date'])
+                    "headline": headline,
+                    "summary": summary,
+                    "score": score
+                })
+            
+            # Sort by score (descending) and then date (descending) to get most relevant latest news
+            ranked_news.sort(key=lambda x: (x['score'], x['date']), reverse=True)
+            
+            # Take top 10 relevant news
+            top_news = ranked_news[:10]
+            
+            # Sort chronologically for the model (oldest to newest)
+            top_news.sort(key=lambda x: x['date'])
+            
+            # Remove score field
+            weekly_news = [{k: v for k, v in n.items() if k != 'score'} for n in top_news]
+            
         except Exception as e:
             print(f"News fetch error: {e}")
             weekly_news = []
@@ -288,7 +335,7 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True):
     
     torch.cuda.empty_cache()
     
-    return answer
+    return answer, prompt
 
 
 # ============================================================================
@@ -311,7 +358,7 @@ def handler(event):
         use_basics = input_data.get("use_basics", True)
         
         # Generate prediction
-        prediction = predict(
+        prediction, prompt = predict(
             ticker=ticker.upper(),
             prediction_date=prediction_date,
             n_weeks=n_weeks,
@@ -321,7 +368,8 @@ def handler(event):
         return {
             "ticker": ticker.upper(),
             "date": prediction_date or date.today().strftime("%Y-%m-%d"),
-            "prediction": prediction
+            "prediction": prediction,
+            "prompt": prompt
         }
     
     except Exception as e:

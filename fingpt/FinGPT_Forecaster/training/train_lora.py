@@ -211,6 +211,10 @@ def main(args):
         eval_steps=args.eval_steps if isinstance(args.eval_steps, int) else int(args.eval_steps * len(dataset['train'])),
         fp16=True,
         eval_strategy=args.evaluation_strategy, # Updated for transformers >= 4.41
+        save_strategy=args.evaluation_strategy, # Ensure save strategy matches eval strategy
+        load_best_model_at_end=True,            # Load the best model when finished
+        metric_for_best_model="eval_loss",      # Monitor Validation Loss
+        greater_is_better=False,                # Lower loss is better
         remove_unused_columns=False,
         report_to='wandb' if args.use_wandb else 'none',
         run_name=args.run_name,
@@ -303,7 +307,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=1, type=int, help="The train batch size per device")
     parser.add_argument("--learning_rate", default=5e-5, type=float, help="The learning rate")
     parser.add_argument("--weight_decay", default=0.01, type=float, help="weight decay")
-    parser.add_argument("--num_epochs", default=5, type=float, help="The training epochs")
+    parser.add_argument("--num_epochs", default=3, type=float, help="The training epochs")
     parser.add_argument("--num_workers", default=0, type=int, help="dataloader workers")
     parser.add_argument("--log_interval", default=10, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=16, type=int)

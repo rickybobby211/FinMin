@@ -3,3 +3,9 @@ training/hf_cache/
 training/finetuned_models/
 training/datasets/
 training/raw_data/
+
+# Secrets and API keys
+.streamlit/secrets.toml
+*.env
+.env
+secrets.toml

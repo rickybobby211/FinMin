@@ -1,6 +1,8 @@
 import re
 import os
 import datasets
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from sklearn.metrics import accuracy_score, mean_squared_error
 from collections import defaultdict
 from rouge_score import rouge_scorer
@@ -13,7 +15,33 @@ lora_module_dict = {
         'o_proj', 'gate_proj', 'up_proj', 'down_proj',
         # 'embed_tokens', 'lm_head',
     ],
+    'qwen2.5-32b': [
+        'q_proj', 'k_proj', 'v_proj', 'o_proj', 
+        'gate_proj', 'up_proj', 'down_proj'
+    ]
 }
+
+
+def load_model(model_name, load_in_4bit=False, trust_remote_code=True):
+    """
+    Factory function to load models with optional quantization.
+    """
+    quantization_config = None
+    if load_in_4bit:
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"
+        )
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        quantization_config=quantization_config,
+        trust_remote_code=trust_remote_code,
+        device_map="auto" if load_in_4bit else None
+    )
+    return model
 
 
 def tokenize(args, tokenizer, feature):
@@ -31,7 +59,7 @@ def tokenize(args, tokenizer, feature):
     input_ids = prompt_ids + target_ids
     exceed_max_length = len(input_ids) >= args.max_length
     
-     # Add EOS Token
+    # Add EOS Token
     if input_ids[-1] != tokenizer.eos_token_id and not exceed_max_length:
         input_ids.append(tokenizer.eos_token_id)
     
@@ -50,6 +78,8 @@ def parse_model_name(name, from_remote=False):
         return 'THUDM/chatglm2-6b' if from_remote else 'base_models/chatglm2-6b'
     elif name == 'llama2':
         return 'meta-llama/Llama-2-7b-chat-hf' # if from_remote else 'base_models/Llama-2-7b-chat-hf'
+    elif name == 'qwen2.5-32b':
+        return 'Qwen/Qwen2.5-32B-Instruct'
     else:
         raise ValueError(f"Undefined base model {name}")
         
@@ -159,4 +189,3 @@ def calc_metrics(answers, gts):
         "cons_rouge_scores": cons_rouge_scores,
         "anal_rouge_scores": anal_rouge_scores
     }
-    

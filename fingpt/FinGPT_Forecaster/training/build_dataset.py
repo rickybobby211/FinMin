@@ -45,7 +45,7 @@ Analysis: ..."""
 # CONVERSION FUNCTIONS
 # ============================================================================
 
-def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True) -> dict:
+def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_type: str = 'llama2') -> dict:
     """
     Convert GPT-4 labeled data to Llama2 training format.
     
@@ -53,6 +53,7 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True) -> dict:
         symbol: Ticker symbol
         data_dir: Directory containing GPT-4 labeled CSV files
         with_basics: Whether to use files with basic financials
+        format_type: 'llama2' (default) or 'qwen'
     
     Returns:
         Dictionary with prompts, answers, periods, labels, and symbols
@@ -104,8 +105,15 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True) -> dict:
             print(f"    Warning: Could not transform answer {i} for {symbol}: {e}")
             continue
         
-        # Wrap in Llama2 instruction format
-        prompt = B_INST + B_SYS + SYSTEM_PROMPT + E_SYS + prompt + E_INST
+        # Format based on model type
+        if format_type == 'qwen':
+            # Qwen/ChatML format
+            # <|im_start|>system\n...<|im_end|>\n<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n
+            prompt = f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+            answer = f"{answer}<|im_end|>"
+        else:
+            # Llama2 format (default)
+            prompt = B_INST + B_SYS + SYSTEM_PROMPT + E_SYS + prompt + E_INST
         
         prompts.append(prompt)
         answers.append(answer)
@@ -129,7 +137,8 @@ def create_dataset(
     data_dir: str,
     symbols: list = None,
     train_ratio: float = 0.8,
-    with_basics: bool = True
+    with_basics: bool = True,
+    format_type: str = 'llama2'
 ) -> DatasetDict:
     """
     Create a HuggingFace dataset from all processed symbols.
@@ -139,6 +148,7 @@ def create_dataset(
         symbols: List of symbols to include (None = all available)
         train_ratio: Ratio of data to use for training
         with_basics: Whether to use files with basic financials
+        format_type: 'llama2' or 'qwen'
     
     Returns:
         DatasetDict with 'train' and 'test' splits
@@ -155,7 +165,7 @@ def create_dataset(
     print(f"\nProcessing {len(symbols)} symbols...")
     
     for symbol in symbols:
-        data_dict = gpt4_to_llama(symbol, data_dir, with_basics)
+        data_dict = gpt4_to_llama(symbol, data_dir, with_basics, format_type)
         
         if data_dict is None:
             continue
@@ -196,6 +206,8 @@ def main():
     parser.add_argument('--symbols', type=str, default='all',
                         help='Comma-separated symbols or "all"')
     parser.add_argument('--no_basics', action='store_true', help='Use nobasics files')
+    parser.add_argument('--format', type=str, default='llama2', choices=['llama2', 'qwen'],
+                        help='Prompt format: llama2 (default) or qwen')
     args = parser.parse_args()
     
     # Parse symbols
@@ -213,6 +225,7 @@ def main():
     print(f"Output Name: {args.output_name}")
     print(f"Train Ratio: {args.train_ratio}")
     print(f"Include Financials: {with_basics}")
+    print(f"Format: {args.format}")
     print("=" * 60)
     
     # Create dataset
@@ -220,7 +233,8 @@ def main():
         args.data_dir,
         symbols=symbols,
         train_ratio=args.train_ratio,
-        with_basics=with_basics
+        with_basics=with_basics,
+        format_type=args.format
     )
     
     # Save dataset
