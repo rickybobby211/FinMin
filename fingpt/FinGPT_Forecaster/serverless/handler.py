@@ -24,11 +24,11 @@ from peft import PeftModel
 # CONFIGURATION
 # ============================================================================
 
-MODEL_ID = "meta-llama/Llama-2-7b-chat-hf"
-ADAPTER_ID = os.environ.get("ADAPTER_PATH", "FinGPT/fingpt-forecaster_dow30_llama2-7b_lora")
+MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
+ADAPTER_ID = os.environ.get("ADAPTER_PATH", "rickson21/qwen2.5-32b-finmin-v1")
 
-B_INST, E_INST = "[INST]", "[/INST]"
-B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
+B_INST, E_INST = "<|im_start|>", "<|im_end|>"
+B_SYS, E_SYS = "system\n", "\n<|im_start|>user\n"
 
 SYSTEM_PROMPT = """You are acting as a professional equity analyst.
 
@@ -92,7 +92,8 @@ def load_model():
         token=hf_token,
         trust_remote_code=True,
         device_map="auto",
-        torch_dtype=torch.float16
+        torch_dtype=torch.float16,
+        load_in_4bit=True  # Important for 32B model on RunPod serverless (fits in 24GB-48GB)
     )
     
     # Load LoRA adapter
@@ -296,7 +297,7 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True):
     period = f"{curday} to {n_weeks_before(curday, -1)}"
     prompt += f"\nBased on all the information before {curday}, let's first analyze the positive developments and potential concerns for {ticker}. Come up with 2-4 most important factors respectively and keep them concise. Then make your prediction of the {ticker} stock price movement for next week ({period}). Provide a summary analysis to support your prediction."
     
-    full_prompt = B_INST + B_SYS + SYSTEM_PROMPT + E_SYS + prompt + E_INST
+    full_prompt = B_INST + B_SYS + SYSTEM_PROMPT + E_SYS + prompt + E_INST + "assistant\n"
     return full_prompt
 
 
@@ -331,7 +332,15 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True):
     
     # Decode
     output = tokenizer.decode(res[0], skip_special_tokens=True)
-    answer = re.sub(r'.*\[/INST\]\s*', '', output, flags=re.DOTALL)
+    
+    if "<|im_start|>assistant" in output:
+        answer = output.split("<|im_start|>assistant")[-1]
+    else:
+        answer = output
+
+    answer = answer.replace("<|im_end|>", "").strip()
+    # Remove system prompt residue just in case
+    answer = re.sub(r'.*<\|im_start\|>user.*?<\|im_end\|>', '', answer, flags=re.DOTALL).strip()
     
     torch.cuda.empty_cache()
     
