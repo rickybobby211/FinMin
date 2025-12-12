@@ -173,7 +173,7 @@ def parse_prediction(text):
         # Look at the next 300 chars to find the direction word
         search_window = text_lower[start_idx : start_idx + 300]
         
-        # Search for direction words
+        # Search for direction words (prioritize longer matches like 'increase' over 'up')
         found = re.search(direction_pattern, search_window)
         if found:
             word = found.group(1)
@@ -181,7 +181,7 @@ def parse_prediction(text):
 
     # Strategy 2: Last Resort - Look for direction in the last 200 characters of the entire text
     # Ideally, the conclusion is at the very end.
-    last_chars = text_lower[-200:]
+    last_chars = text_lower[-300:] # Increased window for safety
     found = re.search(direction_pattern, last_chars)
     if found:
         word = found.group(1)
