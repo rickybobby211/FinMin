@@ -33,8 +33,10 @@ os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
 
 class GenerationEvalCallback(TrainerCallback):
     
-    def __init__(self, eval_dataset, base_model, ignore_until_epoch=0):
+    def __init__(self, eval_dataset, base_model, tokenizer, ignore_until_epoch=0):
         self.eval_dataset = eval_dataset
+        self.base_model = base_model
+        self.tokenizer = tokenizer
         self.ignore_until_epoch = ignore_until_epoch
         self.is_qwen = "qwen" in base_model.lower()
     
@@ -45,7 +47,7 @@ class GenerationEvalCallback(TrainerCallback):
             
         if state.is_local_process_zero:
             model = kwargs['model']
-            tokenizer = kwargs['tokenizer']
+            tokenizer = self.tokenizer
             generated_texts, reference_texts = [], []
 
             for feature in tqdm(self.eval_dataset):
@@ -216,6 +218,7 @@ def main(args):
             GenerationEvalCallback(
                 eval_dataset=eval_dataset,
                 base_model=args.base_model,
+                tokenizer=tokenizer,
                 ignore_until_epoch=round(0.3 * args.num_epochs)
             )
         ]
