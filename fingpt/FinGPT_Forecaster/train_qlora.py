@@ -171,7 +171,7 @@ def main(args):
         load_best_model_at_end=True,            # Load the best model when finished
         metric_for_best_model="eval_loss",      # Monitor Validation Loss
         greater_is_better=False,                # Lower loss is better
-        save_strategy=args.evaluation_strategy, # Ensure save strategy matches eval strategy
+        save_strategy=args.eval_strategy, # Ensure save strategy matches eval strategy
         deepspeed=args.ds_config if not args.load_in_4bit else None, # Disable DeepSpeed if 4-bit quantization is used
         evaluation_strategy=args.evaluation_strategy,
         remove_unused_columns=False,
