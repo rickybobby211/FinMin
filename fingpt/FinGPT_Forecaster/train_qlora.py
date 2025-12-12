@@ -113,15 +113,24 @@ def main(args):
     else:
         dataset_fname = "./data/" + args.dataset
 
-    dataset_list = load_dataset(dataset_fname, args.from_remote)
-    
-    dataset_train = datasets.concatenate_datasets([d['train'] for d in dataset_list]).shuffle(seed=42)
-    
-    if args.test_dataset:
-        test_dataset_fname = "./data/" + args.test_dataset
-        dataset_list = load_dataset(test_dataset_fname, args.from_remote)
-            
-    dataset_test = datasets.concatenate_datasets([d['test'] for d in dataset_list])
+    # Direct loading for debugging/simplicity
+    if not args.from_remote and os.path.exists(dataset_fname):
+        print(f"Loading dataset directly from disk: {dataset_fname}")
+        from datasets import load_from_disk
+        raw_dataset = load_from_disk(dataset_fname)
+        
+        # Ensure it is a DatasetDict
+        if isinstance(raw_dataset, datasets.Dataset):
+            # If it's a single dataset, assume it's train and split it
+             raw_dataset = raw_dataset.train_test_split(test_size=0.2, seed=42)
+             
+        dataset_train = raw_dataset['train'].shuffle(seed=42)
+        dataset_test = raw_dataset['test']
+        print("Direct load successful.")
+    else:
+        dataset_list = load_dataset(dataset_fname, args.from_remote)
+        dataset_train = datasets.concatenate_datasets([d['train'] for d in dataset_list]).shuffle(seed=42)
+        dataset_test = datasets.concatenate_datasets([d['test'] for d in dataset_list])
     
     original_dataset = datasets.DatasetDict({'train': dataset_train, 'test': dataset_test})
     
