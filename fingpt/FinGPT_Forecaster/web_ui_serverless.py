@@ -9,7 +9,7 @@ from datetime import date
 # ============================================================================
 
 # RunPod Configuration
-RUNPOD_API_ID = "lfahu5e6q9pmfq"  # Your Endpoint ID
+RUNPOD_API_ID = "YOUR_NEW_ENDPOINT_ID"  # TODO: Replace with your new Endpoint ID
 BASE_URL = f"https://api.runpod.ai/v2/{RUNPOD_API_ID}"
 
 # Try to get API KEY from Streamlit secrets, environment variable, or fallback
@@ -156,7 +156,7 @@ def main():
             
             Powered by:
             - **RunPod Serverless** (GPU)
-            - **Llama-2-7b** (Fine-tuned)
+            - **Qwen-2.5-32B** (Fine-tuned)
             - **Finnhub** (News Data)
             """
         )
