@@ -126,6 +126,9 @@ def main(args):
     original_dataset = datasets.DatasetDict({'train': dataset_train, 'test': dataset_test})
     
     print(f"Loaded dataset sizes - Train: {len(original_dataset['train'])}, Test: {len(original_dataset['test'])}")
+    if len(original_dataset['train']) > 0:
+        print("First training example keys:", original_dataset['train'][0].keys())
+        # print("First training example:", original_dataset['train'][0]) # Uncomment if needed
 
     num_eval_samples = min(50, len(original_dataset['test']))
     eval_dataset = original_dataset['test'].shuffle(seed=42).select(range(num_eval_samples))
