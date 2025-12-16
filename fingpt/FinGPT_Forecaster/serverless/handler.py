@@ -17,6 +17,8 @@ import pandas as pd
 import yfinance as yf
 from datetime import date, datetime, timedelta
 from collections import defaultdict
+from typing import Optional, List, Tuple
+from openai import OpenAI
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
@@ -148,12 +150,124 @@ def get_stock_data(stock_symbol, steps):
     })
 
 
+def _parse_news_date(date_str: str) -> Optional[datetime]:
+    """Parse finnhub news date strings into datetime; return None on failure."""
+    if not date_str:
+        return None
+    try:
+        # Support both YYYYMMDDHHMMSS and YYYY-MM-DD
+        if "-" in date_str:
+            return datetime.strptime(date_str[:10], "%Y-%m-%d")
+        return datetime.strptime(date_str[:14], "%Y%m%d%H%M%S")
+    except Exception:
+        return None
+
+
+def _score_news_item(item: dict, end_date: Optional[str]) -> tuple:
+    """
+    Score news for relevance: prefer recent items (closest to end_date) and with richer text.
+    Uses Strategy-like scoring so we can swap heuristics easily.
+    """
+    end_dt = _parse_news_date(end_date) if end_date else None
+    news_dt = _parse_news_date(item.get("date", ""))
+
+    # Recency: newer is better; if end_date known, distance to end_date (negative for closer)
+    if news_dt and end_dt:
+        recency_score = -(abs((end_dt - news_dt).total_seconds()))
+    elif news_dt:
+        recency_score = news_dt.timestamp()
+    else:
+        recency_score = float("-inf")
+
+    # Information richness: longer headline+summary treated as more informative
+    headline = item.get("headline") or ""
+    summary = item.get("summary") or ""
+    info_len = len(headline) + len(summary)
+
+    # Keyword boosting: Prefer financial/business keywords to catch major deals
+    keywords = ["partnership", "deal", "earnings", "revenue", "profit", "loss", "acquisition", "merger", "upgrade", "downgrade"]
+    content = (headline + " " + summary).lower()
+    keyword_score = sum(100 for kw in keywords if kw in content)
+
+    return (recency_score, keyword_score + info_len)
+
+
+def rank_news_by_relevance(news: list, end_date: Optional[str]) -> list:
+    """Return news sorted by heuristic relevance (recency + info richness)."""
+    valid_news = [n for n in news if isinstance(n, dict)]
+    return sorted(valid_news, key=lambda n: _score_news_item(n, end_date), reverse=True)
+
+
+def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str) -> list:
+    """
+    Use LLM to select the most impactful news for a specific stock.
+    """
+    if not news:
+        return []
+    
+    # Prepare news list for LLM
+    news_text = ""
+    valid_news = [n for n in news if isinstance(n, dict)]
+    for i, n in enumerate(valid_news):
+        headline = n.get('headline', 'No Headline')
+        summary = n.get('summary', 'No Summary')
+        date_str = n.get('date', 'Unknown Date') # Renamed to avoid shadowing datetime.date
+        news_text += f"ID {i}: [{date_str}] {headline} - {summary}\n"
+
+    system_prompt = f"""You are a financial analyst specializing in {symbol}. 
+Your task is to select the {k} most important news items from the provided list that are likely to have the biggest impact on {symbol}'s stock price direction.
+Focus on:
+1. Earnings releases and financial guidance
+2. Major product launches or regulatory approvals
+3. Mergers, acquisitions, and strategic partnerships
+4. Macroeconomic events directly affecting the sector
+5. Significant legal or regulatory actions
+
+Ignore generic market commentary or minor fluff unless it's the only info available.
+Return ONLY the IDs of the selected news items as a JSON list, e.g., [0, 4, 12]. Do not include any other text."""
+
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": news_text}
+            ],
+            temperature=0.0,
+            max_tokens=100
+        )
+        response = completion.choices[0].message.content.strip()
+        
+        # Extract IDs using regex to be robust
+        ids = [int(x) for x in re.findall(r'\d+', response)]
+        
+        # Return selected news items in order
+        selected = [valid_news[i] for i in ids if i < len(valid_news)]
+        return selected[:k]
+    except Exception as e:
+        print(f"    LLM News Selection Failed: {e}. Falling back to relevance scoring.")
+        return rank_news_by_relevance(news, None)[:k]
+
+
 def get_news(symbol, data):
-    """Fetch company news from Finnhub."""
+    """Fetch company news from Finnhub and rank with LLM (DeepSeek) if available."""
     if finnhub_client is None:
         data['News'] = [json.dumps([])] * len(data)
         return data
     
+    # Setup DeepSeek client
+    llm_client = None
+    deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if deepseek_api_key:
+        try:
+            llm_client = OpenAI(
+                api_key=deepseek_api_key,
+                base_url="https://api.deepseek.com"
+            )
+            print("Using DeepSeek for news selection")
+        except Exception as e:
+            print(f"Failed to init DeepSeek client: {e}")
+
     news_list = []
     for _, row in data.iterrows():
         start_date = row['Start Date'].strftime('%Y-%m-%d')
@@ -163,39 +277,28 @@ def get_news(symbol, data):
             time.sleep(0.5)  # Rate limit
             weekly_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
             
-            # Filter and rank news by relevance
-            ranked_news = []
+            # Pre-process news for our format
+            processed_news = []
             for n in weekly_news:
-                score = 0
-                headline = n.get('headline', '')
-                summary = n.get('summary', '')
-                content = f"{headline} {summary}".lower()
-                symbol_lower = symbol.lower()
-                
-                # Relevance scoring
-                if symbol_lower in content:
-                    score += 10
-                if any(kw in content for kw in ['earnings', 'revenue', 'profit', 'dividend', 'merger', 'acquisition', 'growth']):
-                    score += 2
-                
-                ranked_news.append({
-                    "date": datetime.fromtimestamp(n['datetime']).strftime('%Y%m%d%H%M%S'),
-                    "headline": headline,
-                    "summary": summary,
-                    "score": score
+                # Convert timestamp to YYYYMMDDHHMMSS
+                dt_str = datetime.fromtimestamp(n['datetime']).strftime('%Y%m%d%H%M%S')
+                processed_news.append({
+                    "date": dt_str,
+                    "headline": n.get('headline', ''),
+                    "summary": n.get('summary', '')
                 })
-            
-            # Sort by score (descending) and then date (descending) to get most relevant latest news
-            ranked_news.sort(key=lambda x: (x['score'], x['date']), reverse=True)
-            
-            # Take top 10 relevant news
-            top_news = ranked_news[:10]
+
+            if llm_client:
+                # Use LLM selection
+                selected_news = rank_news_with_llm(processed_news, 10, symbol, llm_client, "deepseek-chat")
+            else:
+                # Use fallback relevance scoring
+                selected_news = rank_news_by_relevance(processed_news, end_date)[:10]
             
             # Sort chronologically for the model (oldest to newest)
-            top_news.sort(key=lambda x: x['date'])
+            selected_news.sort(key=lambda x: x['date'])
             
-            # Remove score field
-            weekly_news = [{k: v for k, v in n.items() if k != 'score'} for n in top_news]
+            weekly_news = selected_news
             
         except Exception as e:
             print(f"News fetch error: {e}")
