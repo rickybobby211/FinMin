@@ -6,6 +6,9 @@ This handler processes stock prediction requests on RunPod Serverless.
 Deploy with: runpod deploy
 """
 
+import sys
+print("--- HANDLER STARTUP: Imports starting ---", flush=True)
+
 import os
 import re
 import json
@@ -21,6 +24,8 @@ from typing import Optional, List, Tuple
 from openai import OpenAI
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
+
+print("--- HANDLER STARTUP: Imports finished ---", flush=True)
 
 # ============================================================================
 # CONFIGURATION
@@ -81,39 +86,55 @@ def load_model():
     if model is not None:
         return  # Already loaded
     
-    print("Loading model...")
+    print("Loading model...", flush=True)
     
-    # Get HuggingFace token
-    hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        raise ValueError("HF_TOKEN environment variable not set")
-    
-    # Load base model
-    base_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        token=hf_token,
-        trust_remote_code=True,
-        device_map="auto",
-        torch_dtype=torch.float16,
-        load_in_4bit=True  # Important for 32B model on RunPod serverless (fits in 24GB-48GB)
-    )
-    
-    # Load LoRA adapter
-    if "/" in ADAPTER_ID and not os.path.exists(ADAPTER_ID):
-        model = PeftModel.from_pretrained(base_model, ADAPTER_ID, token=hf_token)
-    else:
-        model = PeftModel.from_pretrained(base_model, ADAPTER_ID)
-    model = model.eval()
-    
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=hf_token)
-    
-    # Initialize Finnhub client
-    finnhub_api_key = os.environ.get("FINNHUB_API_KEY")
-    if finnhub_api_key:
-        finnhub_client = finnhub.Client(api_key=finnhub_api_key)
-    
-    print("Model loaded successfully!")
+    try:
+        # Get HuggingFace token
+        hf_token = os.environ.get("HF_TOKEN")
+        if not hf_token:
+            print("ERROR: HF_TOKEN environment variable not set!", flush=True)
+            raise ValueError("HF_TOKEN environment variable not set")
+        
+        print(f"Using Model ID: {MODEL_ID}", flush=True)
+        print(f"Using Adapter ID: {ADAPTER_ID}", flush=True)
+
+        # Load base model
+        base_model = AutoModelForCausalLM.from_pretrained(
+            MODEL_ID,
+            token=hf_token,
+            trust_remote_code=True,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            load_in_4bit=True
+        )
+        print("Base model loaded.", flush=True)
+        
+        # Load LoRA adapter
+        if "/" in ADAPTER_ID and not os.path.exists(ADAPTER_ID):
+            model = PeftModel.from_pretrained(base_model, ADAPTER_ID, token=hf_token)
+        else:
+            model = PeftModel.from_pretrained(base_model, ADAPTER_ID)
+        
+        model = model.eval()
+        print("Adapter loaded and merged.", flush=True)
+        
+        # Load tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=hf_token)
+        print("Tokenizer loaded.", flush=True)
+        
+        # Initialize Finnhub client
+        finnhub_api_key = os.environ.get("FINNHUB_API_KEY")
+        if finnhub_api_key:
+            finnhub_client = finnhub.Client(api_key=finnhub_api_key)
+            print("Finnhub client initialized.", flush=True)
+        
+        print("Model loaded successfully!", flush=True)
+
+    except Exception as e:
+        print(f"CRITICAL ERROR during model loading: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        raise e
 
 
 # ============================================================================
@@ -227,6 +248,7 @@ Ignore generic market commentary or minor fluff unless it's the only info availa
 Return ONLY the IDs of the selected news items as a JSON list, e.g., [0, 4, 12]. Do not include any other text."""
 
     try:
+        print(f"    [DeepSeek] Ranking {len(valid_news)} news items for {symbol}...", flush=True)
         completion = client.chat.completions.create(
             model=model,
             messages=[
@@ -237,9 +259,11 @@ Return ONLY the IDs of the selected news items as a JSON list, e.g., [0, 4, 12].
             max_tokens=100
         )
         response = completion.choices[0].message.content.strip()
+        print(f"    [DeepSeek] Response received: {response}", flush=True)
         
         # Extract IDs using regex to be robust
         ids = [int(x) for x in re.findall(r'\d+', response)]
+        print(f"    [DeepSeek] Parsed IDs: {ids}", flush=True)
         
         # Return selected news items in order
         selected = [valid_news[i] for i in ids if i < len(valid_news)]
@@ -264,9 +288,11 @@ def get_news(symbol, data):
                 api_key=deepseek_api_key,
                 base_url="https://api.deepseek.com"
             )
-            print("Using DeepSeek for news selection")
+            print("    [DeepSeek] Client initialized successfully", flush=True)
         except Exception as e:
-            print(f"Failed to init DeepSeek client: {e}")
+            print(f"    [DeepSeek] Failed to init client: {e}", flush=True)
+    else:
+        print("    [DeepSeek] Warning: DEEPSEEK_API_KEY not found in environment variables", flush=True)
 
     news_list = []
     for _, row in data.iterrows():
@@ -489,4 +515,5 @@ def handler(event):
 
 
 # Start the serverless worker
+print("--- HANDLER STARTUP: Starting RunPod Listener ---", flush=True)
 runpod.serverless.start({"handler": handler})

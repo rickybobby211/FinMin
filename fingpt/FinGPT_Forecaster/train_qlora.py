@@ -55,7 +55,7 @@ class GenerationEvalCallback(TrainerCallback):
                 gt = feature['answer']
                 inputs = tokenizer(
                     prompt, return_tensors='pt',
-                    padding=False, max_length=4096
+                    padding=False, max_length=args.max_length
                 )
                 inputs = {key: value.to(model.device) for key, value in inputs.items()}
                 
@@ -195,8 +195,8 @@ def main(args):
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         inference_mode=False,
-        r=8,
-        lora_alpha=16,
+        r=32,
+        lora_alpha=64,
         lora_dropout=0.1,
         target_modules=lora_module_dict[args.base_model],
         bias='none',
@@ -242,7 +242,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", required=True, type=str)
     parser.add_argument("--test_dataset", type=str)
     parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2', 'qwen2.5-32b'])
-    parser.add_argument("--max_length", default=512, type=int)
+    parser.add_argument("--max_length", default=4096, type=int)
     parser.add_argument("--batch_size", default=1, type=int, help="The train batch size per device")
     parser.add_argument("--learning_rate", default=1e-4, type=float, help="The learning rate")
     parser.add_argument("--weight_decay", default=0.01, type=float, help="weight decay")

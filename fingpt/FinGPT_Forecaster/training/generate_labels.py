@@ -37,6 +37,7 @@ import finnhub
 import pandas as pd
 import requests
 import threading
+import yfinance as yf
 from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -51,6 +52,211 @@ load_dotenv("../.env")  # Also check parent directory
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
+
+class MarketDataManager:
+    """Manages downloading and caching of market index data."""
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(MarketDataManager, cls).__new__(cls)
+                    cls._instance.data = {}
+        return cls._instance
+    
+    def get_data(self, symbol: str) -> pd.DataFrame:
+        if symbol not in self.data:
+            print(f"    Downloading market data for {symbol}...")
+            # Download plenty of history to cover all backtests
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            df = yf.download(symbol, start="2020-01-01", end=end_date, progress=False)
+            
+            # Handle yfinance columns
+            if isinstance(df.columns, pd.MultiIndex):
+                try:
+                    df = df.droplevel(1, axis=1)
+                except:
+                    pass
+            
+            self.data[symbol] = df
+        return self.data[symbol]
+
+    def get_return(self, symbol: str, start_date: str, end_date: str) -> float:
+        """Calculate return for a specific period."""
+        try:
+            df = self.get_data(symbol)
+            price_col = 'Close' if 'Close' in df.columns else 'Adj Close'
+            series = df[price_col]
+            
+            # Find closest available dates
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            
+            # Get prices (using nearest valid trading days)
+            start_idx = series.index.get_indexer([start_dt], method='nearest')[0]
+            end_idx = series.index.get_indexer([end_dt], method='nearest')[0]
+            
+            start_price = series.iloc[start_idx]
+            end_price = series.iloc[end_idx]
+            
+            return (end_price - start_price) / start_price
+        except Exception as e:
+            # print(f"Warning: Could not calc market return: {e}")
+            return 0.0
+
+    def get_volatility_data(self, symbol: str, start_date: str, end_date: str) -> dict:
+        """Get volatility data dict."""
+        try:
+            df = self.get_data(symbol)
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            
+            mask = (df.index >= start_dt) & (df.index <= end_dt)
+            period_df = df.loc[mask]
+            
+            if period_df.empty:
+                return {}
+                
+            high = period_df['High'].max()
+            low = period_df['Low'].min()
+            
+            range_pct = (high - low) / low * 100
+            return {"high": high, "low": low, "pct": range_pct}
+        except:
+            return {}
+            
+    def get_vix_data(self, date_str: str) -> dict:
+        """Get VIX data dict."""
+        try:
+            vix_df = self.get_data("^VIX")
+            dt = pd.to_datetime(date_str)
+            idx = vix_df.index.get_indexer([dt], method='pad')[0]
+            if idx == -1: return {}
+            
+            vix_val = vix_df.iloc[idx]
+            if isinstance(vix_val, pd.Series): vix_val = vix_val.item()
+            
+            desc = "High Fear" if vix_val > 30 else "Elevated Uncertainty" if vix_val > 20 else "Calm"
+            return {"value": vix_val, "desc": desc}
+        except:
+            return {}
+
+    def get_volume_z_score(self, symbol: str, date_str: str) -> float:
+        """Calculate Volume Z-Score."""
+        try:
+            df = self.get_data(symbol)
+            dt = pd.to_datetime(date_str)
+            price_col = 'Close' if 'Close' in df.columns else 'Adj Close'
+            prices = df[price_col]
+            if dt not in prices.index:
+                idx_loc = prices.index.get_indexer([dt], method='pad')[0]
+                if idx_loc == -1: return 0.0
+                dt = prices.index[idx_loc]
+                
+            if 'Volume' in df.columns:
+                vol = df['Volume'].loc[:dt]
+                if len(vol) >= 20:
+                    vol_mean = vol.rolling(window=20).mean().iloc[-1]
+                    vol_std = vol.rolling(window=20).std().iloc[-1]
+                    current_vol = vol.iloc[-1]
+                    return (current_vol - vol_mean) / vol_std if vol_std > 0 else 0.0
+            return 0.0
+        except:
+            return 0.0
+
+    def get_technical_data(self, symbol: str, date_str: str) -> dict:
+        """Calculate technical indicators and return as dict."""
+        try:
+            df = self.get_data(symbol)
+            price_col = 'Close' if 'Close' in df.columns else 'Adj Close'
+            prices = df[price_col]
+            
+            dt = pd.to_datetime(date_str)
+            if dt not in prices.index:
+                idx_loc = prices.index.get_indexer([dt], method='pad')[0]
+                if idx_loc == -1: return {}
+                dt = prices.index[idx_loc]
+            
+            hist = prices.loc[:dt]
+            if len(hist) < 200: return {}
+            
+            # SMA & Trend
+            sma50 = hist.rolling(window=50).mean().iloc[-1]
+            sma200 = hist.rolling(window=200).mean().iloc[-1]
+            current_price = hist.iloc[-1]
+            
+            trend = "Bullish" if current_price > sma200 else "Bearish"
+            if current_price > sma50 and current_price > sma200: trend = "Strong Uptrend"
+            elif current_price < sma50 and current_price < sma200: trend = "Strong Downtrend"
+            
+            # RSI (14)
+            delta = hist.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            rsi_val = rsi.iloc[-1]
+            rsi_desc = "Overbought" if rsi_val > 70 else "Oversold" if rsi_val < 30 else "Neutral"
+            
+            # WEEKLY RSI
+            weekly_close = prices.resample('W').last().loc[:dt]
+            w_rsi_val = 0.0
+            w_rsi_desc = "N/A"
+            if len(weekly_close) > 15:
+                w_delta = weekly_close.diff()
+                w_gain = (w_delta.where(w_delta > 0, 0)).rolling(window=14).mean()
+                w_loss = (-w_delta.where(w_delta < 0, 0)).rolling(window=14).mean()
+                w_rs = w_gain / w_loss
+                w_rsi = 100 - (100 / (1 + w_rs))
+                w_rsi_val = w_rsi.iloc[-1]
+                w_rsi_desc = "Overbought" if w_rsi_val > 70 else "Oversold" if w_rsi_val < 30 else "Neutral"
+            
+            # MACD
+            exp1 = hist.ewm(span=12, adjust=False).mean()
+            exp2 = hist.ewm(span=26, adjust=False).mean()
+            macd = exp1 - exp2
+            signal = macd.ewm(span=9, adjust=False).mean()
+            macd_desc = "Bullish Crossover" if macd.iloc[-1] > signal.iloc[-1] else "Bearish Crossover"
+            
+            # Volume Z-Score
+            vol_z = 0.0
+            vol_z_desc = "Normal"
+            if 'Volume' in df.columns:
+                vol = df['Volume'].loc[:dt]
+                if len(vol) >= 20:
+                    vol_mean = vol.rolling(window=20).mean().iloc[-1]
+                    vol_std = vol.rolling(window=20).std().iloc[-1]
+                    vol_z = (vol.iloc[-1] - vol_mean) / vol_std if vol_std > 0 else 0.0
+                    if vol_z > 2.0: vol_z_desc = f"HUGE (Z-Score: {vol_z:.1f})"
+                    elif vol_z > 1.0: vol_z_desc = f"High (Z-Score: {vol_z:.1f})"
+                    else: vol_z_desc = f"Normal (Z-Score: {vol_z:.1f})"
+            
+            # ATR
+            high = df['High'].loc[:dt]
+            low = df['Low'].loc[:dt]
+            prev_close = hist.shift(1)
+            tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+            atr = tr.rolling(window=14).mean().iloc[-1]
+            atr_desc = "High" if atr > current_price * 0.03 else "Normal"
+            
+            # SMA Distance
+            dist_sma50 = (current_price - sma50) / sma50 * 100
+            reversion_desc = "Overextended" if abs(dist_sma50) > 15 else "Normal"
+            
+            return {
+                "rsi_daily": rsi_val, "rsi_daily_desc": rsi_desc,
+                "rsi_weekly": w_rsi_val, "rsi_weekly_desc": w_rsi_desc,
+                "trend": trend, "macd": macd_desc,
+                "vol_z": vol_z, "vol_z_desc": vol_z_desc,
+                "atr": atr, "atr_desc": atr_desc,
+                "dist_sma50": dist_sma50, "reversion_desc": reversion_desc
+            }
+        except Exception as e:
+            return {}
+
+market_manager = MarketDataManager()
 
 SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list the positive developments and potential concerns for companies based on relevant news and basic financials from the past weeks, then provide an analysis and prediction for the companies' stock price movement for the upcoming week. Your answer format should be as follows:
 
@@ -92,13 +298,43 @@ def get_company_prompt(finnhub_client, symbol: str) -> str:
         return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
 
 
-def get_prompt_by_row(symbol: str, row: pd.Series) -> tuple:
+def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, market_name: str = "Market") -> tuple:
     """Generate prompt components for a single row of data."""
     start_date = row['Start Date'] if isinstance(row['Start Date'], str) else row['Start Date'].strftime('%Y-%m-%d')
     end_date = row['End Date'] if isinstance(row['End Date'], str) else row['End Date'].strftime('%Y-%m-%d')
     term = 'increased' if row['End Price'] > row['Start Price'] else 'decreased'
     
-    head = f"From {start_date} to {end_date}, {symbol}'s stock price {term} from {row['Start Price']:.2f} to {row['End Price']:.2f}. Company news during this period are listed below:\n\n"
+    # Calculate Alpha
+    stock_return = row['Weekly Returns']
+    alpha = stock_return - market_return
+    alpha_pct = alpha * 100
+    alpha_sign = "+" if alpha >= 0 else ""
+    stock_pct = abs(stock_return) * 100
+    
+    # Get Volatility
+    vol_data = market_manager.get_volatility_data(symbol, start_date, end_date)
+    
+    # Get Technicals & VIX
+    ta_data = market_manager.get_technical_data(symbol, end_date)
+    vix_data = market_manager.get_vix_data(end_date)
+    
+    vix_str = f"{vix_data.get('value', 0):.2f} ({vix_data.get('desc', 'N/A')})" if vix_data else "N/A"
+    
+    head = f"[QUANT SIGNALS - STRUCTURAL]:\n"
+    head += f"- Price Move: {symbol} {term} by {stock_pct:.2f}% ({row['Start Price']:.2f} -> {row['End Price']:.2f})\n"
+    head += f"- Alpha vs {market_name}: {alpha_sign}{alpha_pct:.2f}% ({'Outperformed' if alpha >= 0 else 'Underperformed'})\n"
+    head += f"- Market Context (VIX): {vix_str}\n"
+    head += f"- Volume Status: {ta_data.get('vol_z_desc', 'N/A')}\n"
+    head += f"- Volatility (ATR): {ta_data.get('atr', 0):.2f} ({ta_data.get('atr_desc', 'Normal')})\n"
+    head += f"- Weekly RSI (Trend Strength): {ta_data.get('rsi_weekly', 0):.1f} ({ta_data.get('rsi_weekly_desc', 'N/A')})\n\n"
+    
+    head += f"[TECHNICALS - DAILY]:\n"
+    head += f"- Daily RSI: {ta_data.get('rsi_daily', 0):.1f} ({ta_data.get('rsi_daily_desc', 'N/A')})\n"
+    head += f"- Trend: {ta_data.get('trend', 'N/A')}\n"
+    head += f"- MACD: {ta_data.get('macd', 'N/A')}\n"
+    head += f"- Mean Reversion: {ta_data.get('dist_sma50', 0):.1f}% from SMA50 ({ta_data.get('reversion_desc', 'N/A')})\n\n"
+    
+    head += "[NEWS]:\n"
     
     try:
         news_raw = json.loads(row["News"]) if isinstance(row["News"], str) else row["News"]
@@ -192,9 +428,12 @@ def rank_news_by_relevance(news: list, end_date: Optional[str]) -> list:
     return sorted(valid_news, key=lambda n: _score_news_item(n, end_date), reverse=True)
 
 
-def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str) -> list:
+def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str,
+                       stock_return: float = 0.0, market_return: float = 0.0, market_name: str = "Market",
+                       alpha: float = 0.0, vol_z: float = 0.0) -> list:
     """
     Use LLM to select the most impactful news for a specific stock.
+    Includes price movement context (facit) to help the LLM find explaining news.
     """
     if not news:
         return []
@@ -208,17 +447,34 @@ def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str) -> l
         date = n.get('date', 'Unknown Date')
         news_text += f"ID {i}: [{date}] {headline} - {summary}\n"
 
-    system_prompt = f"""You are a financial analyst specializing in {symbol}. 
-Your task is to select the {k} most important news items from the provided list that are likely to have the biggest impact on {symbol}'s stock price direction.
-Focus on:
-1. Earnings releases and financial guidance
-2. Major product launches or regulatory approvals
-3. Mergers, acquisitions, and strategic partnerships
-4. Macroeconomic events directly affecting the sector
-5. Significant legal or regulatory actions
+    # Format context strings
+    stock_dir = "rose" if stock_return >= 0 else "fell"
+    market_dir = "rose" if market_return >= 0 else "fell"
+    stock_pct = abs(stock_return) * 100
+    market_pct = abs(market_return) * 100
+    
+    alpha_desc = "Outperformed" if alpha > 0 else "Underperformed"
+    vol_desc = "Normal"
+    if vol_z > 2.0: vol_desc = "HUGE (Significant Activity)"
+    elif vol_z > 1.0: vol_desc = "High"
 
-Ignore generic market commentary or minor fluff unless it's the only info available.
-Return ONLY the IDs of the selected news items as a JSON list, e.g., [0, 4, 12]. Do not include any other text."""
+    system_prompt = f"""You are a financial analyst. Your task is to select {k} news items that EXPLAIN the actual performance of {symbol}.
+
+[THE REALITY (FACIT)]:
+- {symbol} return: {stock_return*100:.2f}%
+- Alpha (vs {market_name}): {alpha*100:.2f}%
+- Volume Z-Score: {vol_z:.1f}
+
+[SELECTION RULES]:
+1. If Alpha is NEGATIVE: You MUST prioritize company-specific news that justifies underperformance (bad earnings, analyst downgrades, internal issues).
+2. If Alpha is POSITIVE: You MUST prioritize company-specific catalysts that justify outperformance.
+3. If Volume is HIGH (>1.5): You MUST look for major event-driven news (M&A, huge deals, scandals).
+4. Ignore generic market "noise" if there are company-specific factors available.
+5. Assign a sentiment score (-1 to 1) to each selected news item.
+
+Return ONLY a JSON list of objects with 'id' and 'score', e.g.:
+[{"id": 0, "score": 0.8}, {"id": 4, "score": -0.5}, {"id": 12, "score": 0.2}]
+Do not include any other text."""
 
     try:
         completion = client.chat.completions.create(
@@ -228,24 +484,55 @@ Return ONLY the IDs of the selected news items as a JSON list, e.g., [0, 4, 12].
                 {"role": "user", "content": news_text}
             ],
             temperature=0.0,
-            max_tokens=100
+            max_tokens=200
         )
         response = completion.choices[0].message.content.strip()
         
-        # Extract IDs using regex to be robust
-        import re
-        ids = [int(x) for x in re.findall(r'\d+', response)]
-        
-        # Return selected news items in order
-        selected = [valid_news[i] for i in ids if i < len(valid_news)]
-        return selected[:k]
+        # Parse JSON response
+        try:
+            # Try parsing as pure JSON first
+            import json
+            # Handle potential markdown code blocks
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0].strip()
+                
+            selected_items = json.loads(response)
+            
+            # Helper to get ID and score safely
+            result_news = []
+            for item in selected_items:
+                if isinstance(item, dict) and 'id' in item:
+                    idx = int(item['id'])
+                    score = item.get('score', 0)
+                    if idx < len(valid_news):
+                        news_obj = valid_news[idx].copy()
+                        news_obj['sentiment_score'] = score
+                        result_news.append(news_obj)
+                elif isinstance(item, int): # Fallback if LLM returns simple list
+                    idx = item
+                    if idx < len(valid_news):
+                        result_news.append(valid_news[idx])
+
+            return result_news[:k]
+            
+        except json.JSONDecodeError:
+            # Fallback to regex if JSON fails
+            import re
+            ids = [int(x) for x in re.findall(r'\d+', response)]
+            selected = [valid_news[i] for i in ids if i < len(valid_news)]
+            return selected[:k]
+
     except Exception as e:
         print(f"    LLM News Selection Failed: {e}. Falling back to relevance scoring.")
         return rank_news_by_relevance(news, None)[:k]
 
 
 def sample_news(news: list, k: int = 5, strategy: str = "relevant", end_date: Optional[str] = None, 
-                symbol: str = "", client = None, model: str = "") -> list:
+                symbol: str = "", client = None, model: str = "",
+                stock_return: float = 0.0, market_return: float = 0.0, market_name: str = "Market",
+                alpha: float = 0.0, vol_z: float = 0.0) -> list:
     """
     Select up to k news items using a strategy:
     - "relevant": deterministic top-k by recency + information richness + keywords
@@ -259,7 +546,7 @@ def sample_news(news: list, k: int = 5, strategy: str = "relevant", end_date: Op
         return [news[i] for i in sorted(random.sample(range(len(news)), k))]
     
     if strategy == "llm" and client and symbol:
-        return rank_news_with_llm(news, k, symbol, client, model)
+        return rank_news_with_llm(news, k, symbol, client, model, stock_return, market_return, market_name, alpha, vol_z)
 
     ranked = rank_news_by_relevance(news, end_date)
     return ranked[:k]
@@ -274,8 +561,16 @@ def format_news_items(news_items: list) -> list:
         if isinstance(item, dict):
             headline = item.get("headline", "")
             summary = item.get("summary", "")
+            
+            # Add sentiment score if available
+            score_str = ""
+            if "sentiment_score" in item:
+                score = item["sentiment_score"]
+                sign = "+" if score > 0 else ""
+                score_str = f" (Sentiment: {sign}{score:.2f})"
+
             if headline or summary:
-                formatted.append(f"[Headline]: {headline}\n[Summary]: {summary}\n")
+                formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
         elif isinstance(item, str):
             formatted.append(item)
     return formatted
@@ -326,24 +621,49 @@ def get_all_prompts(
     df = pd.read_csv(csv_file[0])
     company_prompt = get_company_prompt(finnhub_client, symbol)
 
+    # Determine market index for context
+    tech_stocks = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"]
+    market_symbol = "QQQ" if symbol in tech_stocks else "SPY"
+    market_name = "Nasdaq-100" if market_symbol == "QQQ" else "S&P 500"
+
     prev_rows = []
     all_prompts = []
 
     for row_idx, row in df.iterrows():
+        # Get returns and metrics for current row
+        stock_ret = row['Weekly Returns']
+        market_ret = market_manager.get_return(market_symbol, row['Start Date'], row['End Date'])
+        alpha = stock_ret - market_ret
+        vol_z = market_manager.get_volume_z_score(symbol, row['End Date'])
+
         prompt = ""
         if len(prev_rows) >= min_past_weeks:
             idx = min(random.choice(range(min_past_weeks, max_past_weeks + 1)), len(prev_rows))
             for i in range(-idx, 0):
-                prompt += "\n" + prev_rows[i][0]
-                raw_news = prev_rows[i][3] if len(prev_rows[i]) > 3 else prev_rows[i][1]
+                p_row = prev_rows[i]
+                prompt += "\n" + p_row[0]
+                
+                # Extract data safely handling different tuple lengths (backwards compatibility)
+                raw_news = p_row[3] if len(p_row) > 3 else p_row[1]
+                p_stock_ret = p_row[6] if len(p_row) >= 8 else 0.0
+                p_market_ret = p_row[7] if len(p_row) >= 8 else 0.0
+                p_alpha = p_row[8] if len(p_row) >= 10 else (p_stock_ret - p_market_ret)
+                p_vol_z = p_row[9] if len(p_row) >= 10 else 0.0
+                p_end_date = p_row[5] if len(p_row) >= 8 else row['End Date']
+
                 sampled_news = sample_news(
                     raw_news,
                     min(5, len(raw_news)),
                     strategy=news_strategy,
-                    end_date=row['End Date'],
+                    end_date=p_end_date,
                     symbol=symbol,
                     client=client,
-                    model=model
+                    model=model,
+                    stock_return=p_stock_ret,
+                    market_return=p_market_ret,
+                    market_name=market_name,
+                    alpha=p_alpha,
+                    vol_z=p_vol_z
                 )
                 formatted = format_news_items(sampled_news)
                 if formatted:
@@ -351,8 +671,9 @@ def get_all_prompts(
                 else:
                     prompt += "No relative news reported."
 
-        head, news_formatted, basics, news_raw = get_prompt_by_row(symbol, row)
-        prev_rows.append((head, news_formatted, basics, news_raw))
+        head, news_formatted, basics, news_raw = get_prompt_by_row(symbol, row, market_return, market_name)
+        # Store extended data: (head, news, basics, raw_news, start_date, end_date, stock_ret, market_ret, alpha, vol_z)
+        prev_rows.append((head, news_formatted, basics, news_raw, row['Start Date'], row['End Date'], stock_ret, market_ret, alpha, vol_z))
         
         if len(prev_rows) > max_past_weeks:
             prev_rows.pop(0)

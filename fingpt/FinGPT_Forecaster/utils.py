@@ -105,37 +105,72 @@ def load_dataset(names, from_remote=False):
 
 def parse_answer(answer):
     
+    # Attempt to match the original format
     match_res = re.match(r"^\s*\[Positive Developments\]:\s*(.*)\s*\[Potential Concerns\]:\s*(.*)\s*\[Prediction (&|and) Analysis\]:\s*(.*)\s*$", answer, flags=re.DOTALL)
+    
+    # If failed, attempt to match the markdown format (with bold headers)
+    if not match_res:
+        match_res = re.match(r"^\s*\*\*Positive Developments:?\*\*\s*(.*)\s*\*\*Potential Concerns:?\*\*\s*(.*)\s*\*\*Prediction (&|and) Analysis:?\*\*\s*(.*)\s*$", answer, flags=re.DOTALL)
+
     if not match_res:
         return None
     
     pros, cons, pna = match_res.group(1), match_res.group(2), match_res.group(4)
         
-    match_res = re.match(r'^Prediction:\s*(.*)\s*Analysis:\s*(.*)\s*$', pna, flags=re.DOTALL)
-    if not match_res:
-        return None
+    # Attempt to separate Prediction and Analysis
+    # 1. Original format: Prediction then Analysis
+    match_res_pna = re.match(r'^Prediction:\s*(.*)\s*Analysis:\s*(.*)\s*$', pna, flags=re.DOTALL)
+    
+    if match_res_pna:
+        pred, anal = match_res_pna.group(1), match_res_pna.group(2)
+    else:
+        # 2. Markdown format: Analysis then Prediction (common in recent outputs)
+        match_res_pna = re.match(r'^\s*\*\*Analysis:?\*\*\s*(.*)\s*\*\*Prediction:?\*\*\s*(.*)$', pna, flags=re.DOTALL)
+        if match_res_pna:
+            anal, pred = match_res_pna.group(1), match_res_pna.group(2)
+        else:
+            # 3. Markdown format: Prediction then Analysis
+            match_res_pna = re.match(r'^\s*\*\*Prediction:?\*\*\s*(.*)\s*\*\*Analysis:?\*\*\s*(.*)$', pna, flags=re.DOTALL)
+            if match_res_pna:
+                pred, anal = match_res_pna.group(1), match_res_pna.group(2)
+            else:
+                return None
         
-    pred, anal = match_res.group(1), match_res.group(2)
-        
-    if re.search(r'up|increase', pred.lower()):
-        pred_bin = 1
-    elif re.search(r'down|decrease|decline', pred.lower()):
+    # Parse Binary Prediction (Direction)
+    pred_lower = pred.lower()
+    if re.search(r'direction\**:\s*\**down', pred_lower) or re.search(r'down|decrease|decline', pred_lower):
         pred_bin = -1
+    elif re.search(r'direction\**:\s*\**up', pred_lower) or re.search(r'up|increase', pred_lower):
+        pred_bin = 1
     else:
         pred_bin = 0
             
-    match_res = re.search(r'(\d)-(\d)%', pred)
-    if not match_res:
-        match_res = re.search(r'(?:more than )?(\d)+?%', pred)    
-        
-    pred_margin = pred_bin * (int(match_res.group(1)) + 0.5) if match_res else 0.
+    # Parse Prediction Margin (Percentage)
+    # 1. Structured output: "Estimated Percentage Change: -3%"
+    match_res = re.search(r'estimated percentage change\**:\s*\**([+-]?\d+(?:\.\d+)?)%', pred_lower)
+    if match_res:
+        pred_margin = float(match_res.group(1))
+    else:
+        # 2. Range: "1-2%"
+        match_res = re.search(r'(\d+)-(\d+)%', pred)
+        if match_res:
+            match_res_1 = float(match_res.group(1))
+            match_res_2 = float(match_res.group(2))
+            pred_margin = pred_bin * ((match_res_1 + match_res_2) / 2)
+        else:
+            # 3. Single value: "more than 3%"
+            match_res = re.search(r'(?:more than )?(\d+(?:\.\d+)?)%', pred)    
+            if match_res:
+                pred_margin = pred_bin * (float(match_res.group(1)) + 0.5)
+            else:
+                pred_margin = 0.
         
     return {
-        "positive developments": pros,
-        "potential concerns": cons,
+        "positive developments": pros.strip(),
+        "potential concerns": cons.strip(),
         "prediction": pred_margin,
         "prediction_binary": pred_bin,
-        "analysis": anal
+        "analysis": anal.strip()
     }
     
 

@@ -135,6 +135,9 @@ def parse_prediction(text):
         
     text_lower = text.lower()
     
+    # Remove template placeholders to avoid false positives from echoed prompts
+    text_lower = text_lower.replace("[up/down]", "")
+    
     # Map synonyms
     synonyms = {
         "up": "UP",
@@ -142,7 +145,7 @@ def parse_prediction(text):
         "rise": "UP",
         "gain": "UP",
         "growth": "UP",
-        "positive": "UP",
+        # "positive": "UP", # Removed to avoid false positives in prompts
         "bullish": "UP",
         "rally": "UP",
         "jump": "UP",
@@ -159,12 +162,25 @@ def parse_prediction(text):
         "slump": "DOWN"
     }
     
-    direction_pattern = r"\b(" + "|".join(synonyms.keys()) + r")\b"
+    # Create a regex pattern for the synonyms
+    synonym_pattern = "|".join(synonyms.keys())
+    
+    # Strategy 0: Look for explicit "Direction:" or "Trend:" pattern (most reliable for structured output)
+    # Matches: "Direction: DOWN", "**Direction**: **DOWN**", "Direction - DOWN"
+    # We look for "direction" followed by non-word chars (separators) and then a synonym
+    specific_pattern = r"direction[^\w]*(" + synonym_pattern + r")\b"
+    match = re.search(specific_pattern, text_lower)
+    if match:
+        word = match.group(1)
+        return synonyms[word]
+    
+    direction_pattern = r"\b(" + synonym_pattern + r")\b"
     
     # Strategy 1: Look for explicit "Prediction" keyword (case insensitive)
     # We find all occurrences and check the context immediately following them.
     # We prioritize the LAST occurrence as it usually contains the final verdict.
-    matches = list(re.finditer(r"prediction[:\s\*\*]+", text_lower))
+    # REQUIRE a colon to avoid matching "prediction" in the instructions (e.g. "make your prediction of...")
+    matches = list(re.finditer(r"prediction[\*\s]*:", text_lower))
     
     if matches:
         # Check the last occurrence first
@@ -180,12 +196,12 @@ def parse_prediction(text):
             return synonyms[word]
 
     # Strategy 2: Last Resort - Look for direction in the last 200 characters of the entire text
-    # Ideally, the conclusion is at the very end.
-    last_chars = text_lower[-300:] # Increased window for safety
-    found = re.search(direction_pattern, last_chars)
-    if found:
-        word = found.group(1)
-        return synonyms[word]
+    # DISABLED: Too risky if the model echoes the prompt (which contains "Positive" or "Come up with")
+    # last_chars = text_lower[-300:] # Increased window for safety
+    # found = re.search(direction_pattern, last_chars)
+    # if found:
+    #     word = found.group(1)
+    #     return synonyms[word]
         
     return "UNKNOWN"
 
@@ -194,7 +210,7 @@ def main():
     parser.add_argument("--ticker", type=str, default="AAPL", help="Stock Ticker")
     parser.add_argument("--start", type=str, required=True, help="Start Date (YYYY-MM-DD)")
     parser.add_argument("--weeks", type=int, default=10, help="Number of weeks to test")
-    parser.add_argument("--history_weeks", type=int, default=2, help="Weeks of history in prompt (reduce if truncation occurs)")
+    parser.add_argument("--history_weeks", type=int, default=3, help="Weeks of history in prompt (reduce if truncation occurs)")
     parser.add_argument("--api_key", type=str, default=DEFAULT_API_KEY, help="RunPod API Key")
     parser.add_argument("--api_id", type=str, default=DEFAULT_RUNPOD_API_ID, help="RunPod Endpoint ID")
     
@@ -293,9 +309,15 @@ def main():
         print(f"  - Without News: {acc_no_news:.2f}% ({len([r for r in without_news if r['correct']])}/{len(without_news)})")
         
         # Save CSV
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        results_dir = os.path.join(script_dir, "results")
+        os.makedirs(results_dir, exist_ok=True)
+        
         filename = f"backtest_{args.ticker}_{args.start}_{len(results)}w.csv"
-        pd.DataFrame(results).to_csv(filename, index=False)
-        print(f"Results saved to {filename}")
+        full_path = os.path.join(results_dir, filename)
+        
+        pd.DataFrame(results).to_csv(full_path, index=False)
+        print(f"Results saved to {full_path}")
 
 if __name__ == "__main__":
     main()
