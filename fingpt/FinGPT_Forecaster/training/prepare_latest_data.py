@@ -109,7 +109,7 @@ def get_returns(stock_symbol: str, start_date: str, end_date: str) -> pd.DataFra
     return weekly_df
 
 
-def get_news(finnhub_client, symbol: str, data: pd.DataFrame, rate_limit_delay: float = 1.1) -> pd.DataFrame:
+def get_news(finnhub_client, symbol: str, data: pd.DataFrame, rate_limit_delay: float = 0.25) -> pd.DataFrame:
     """
     Fetch company news for each week in the data.
     
@@ -118,8 +118,9 @@ def get_news(finnhub_client, symbol: str, data: pd.DataFrame, rate_limit_delay: 
         symbol: Ticker symbol
         data: DataFrame with Start Date and End Date columns
         rate_limit_delay: Delay between API calls (seconds). 
+                          Paid tier: 300 calls/min = 0.2s minimum, use 0.25s to be safe.
                           Free tier: 60 calls/min = 1.0s minimum, use 1.1s to be safe.
-                          Set higher (e.g., 1.5s) if still hitting limits.
+                          Set higher if still hitting limits.
     
     Returns:
         DataFrame with News column added
@@ -282,8 +283,8 @@ def main():
                         help='Include basic financials')
     parser.add_argument('--no_basics', action='store_true',
                         help='Exclude basic financials')
-    parser.add_argument('--rate_limit_delay', type=float, default=1.1,
-                        help='Delay between Finnhub API calls in seconds (default: 1.1s for free tier)')
+    parser.add_argument('--rate_limit_delay', type=float, default=0.25,
+                        help='Delay between Finnhub API calls in seconds (default: 0.25s for paid tier: 300 calls/min)')
     args = parser.parse_args()
     
     # Get API key

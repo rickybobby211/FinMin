@@ -71,7 +71,8 @@ class MarketDataManager:
             print(f"    Downloading market data for {symbol}...")
             # Download plenty of history to cover all backtests
             end_date = datetime.now().strftime('%Y-%m-%d')
-            df = yf.download(symbol, start="2020-01-01", end=end_date, progress=False)
+            # Suppress FutureWarning by setting auto_adjust explicitly
+            df = yf.download(symbol, start="2020-01-01", end=end_date, progress=False, auto_adjust=False)
             
             # Handle yfinance columns
             if isinstance(df.columns, pd.MultiIndex):
@@ -148,6 +149,7 @@ class MarketDataManager:
         try:
             df = self.get_data(symbol)
             dt = pd.to_datetime(date_str)
+            # Match date logic from technical summary
             price_col = 'Close' if 'Close' in df.columns else 'Adj Close'
             prices = df[price_col]
             if dt not in prices.index:
@@ -278,24 +280,24 @@ SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list
 def get_company_prompt(finnhub_client, symbol: str) -> str:
     """Generate company introduction prompt."""
     if finnhub_client is None:
-        return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
+        return f"[Company Introduction]:\\n\\n{symbol} is a publicly traded company."
     try:
         profile = finnhub_client.company_profile2(symbol=symbol)
         if not profile:
-            return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
+            return f"[Company Introduction]:\\n\\n{symbol} is a publicly traded company."
             
         company_template = (
-            "[Company Introduction]:\n\n{name} is a leading entity in the {finnhubIndustry} sector. "
+            "[Company Introduction]:\\n\\n{name} is a leading entity in the {finnhubIndustry} sector. "
             "Incorporated and publicly traded since {ipo}, the company has established its reputation "
             "as one of the key players in the market. As of today, {name} has a market capitalization "
             "of {marketCapitalization:.2f} in {currency}, with {shareOutstanding:.2f} shares outstanding."
-            "\n\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}. "
+            "\\n\\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}. "
             "As a dominant force in the {finnhubIndustry} space, the company continues to innovate and drive progress within the industry."
         )
         return company_template.format(**profile)
     except Exception as e:
         print(f"    Warning: Could not fetch profile for {symbol}: {e}")
-        return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
+        return f"[Company Introduction]:\\n\\n{symbol} is a publicly traded company."
 
 
 def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, market_name: str = "Market") -> tuple:
@@ -320,21 +322,21 @@ def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, m
     
     vix_str = f"{vix_data.get('value', 0):.2f} ({vix_data.get('desc', 'N/A')})" if vix_data else "N/A"
     
-    head = f"[QUANT SIGNALS - STRUCTURAL]:\n"
-    head += f"- Price Move: {symbol} {term} by {stock_pct:.2f}% ({row['Start Price']:.2f} -> {row['End Price']:.2f})\n"
-    head += f"- Alpha vs {market_name}: {alpha_sign}{alpha_pct:.2f}% ({'Outperformed' if alpha >= 0 else 'Underperformed'})\n"
-    head += f"- Market Context (VIX): {vix_str}\n"
-    head += f"- Volume Status: {ta_data.get('vol_z_desc', 'N/A')}\n"
-    head += f"- Volatility (ATR): {ta_data.get('atr', 0):.2f} ({ta_data.get('atr_desc', 'Normal')})\n"
-    head += f"- Weekly RSI (Trend Strength): {ta_data.get('rsi_weekly', 0):.1f} ({ta_data.get('rsi_weekly_desc', 'N/A')})\n\n"
+    head = f"[QUANT SIGNALS - STRUCTURAL]:\\n"
+    head += f"- Price Move: {symbol} {term} by {stock_pct:.2f}% ({row['Start Price']:.2f} -> {row['End Price']:.2f})\\n"
+    head += f"- Alpha vs {market_name}: {alpha_sign}{alpha_pct:.2f}% ({'Outperformed' if alpha >= 0 else 'Underperformed'})\\n"
+    head += f"- Market Context (VIX): {vix_str}\\n"
+    head += f"- Volume Status: {ta_data.get('vol_z_desc', 'N/A')}\\n"
+    head += f"- Volatility (ATR): {ta_data.get('atr', 0):.2f} ({ta_data.get('atr_desc', 'Normal')})\\n"
+    head += f"- Weekly RSI (Trend Strength): {ta_data.get('rsi_weekly', 0):.1f} ({ta_data.get('rsi_weekly_desc', 'N/A')})\\n\\n"
     
-    head += f"[TECHNICALS - DAILY]:\n"
-    head += f"- Daily RSI: {ta_data.get('rsi_daily', 0):.1f} ({ta_data.get('rsi_daily_desc', 'N/A')})\n"
-    head += f"- Trend: {ta_data.get('trend', 'N/A')}\n"
-    head += f"- MACD: {ta_data.get('macd', 'N/A')}\n"
-    head += f"- Mean Reversion: {ta_data.get('dist_sma50', 0):.1f}% from SMA50 ({ta_data.get('reversion_desc', 'N/A')})\n\n"
+    head += f"[TECHNICALS - DAILY]:\\n"
+    head += f"- Daily RSI: {ta_data.get('rsi_daily', 0):.1f} ({ta_data.get('rsi_daily_desc', 'N/A')})\\n"
+    head += f"- Trend: {ta_data.get('trend', 'N/A')}\\n"
+    head += f"- MACD: {ta_data.get('macd', 'N/A')}\\n"
+    head += f"- Mean Reversion: {ta_data.get('dist_sma50', 0):.1f}% from SMA50 ({ta_data.get('reversion_desc', 'N/A')})\\n\\n"
     
-    head += "[NEWS]:\n"
+    head += "[NEWS]:\\n"
     
     try:
         news_raw = json.loads(row["News"]) if isinstance(row["News"], str) else row["News"]
@@ -348,6 +350,11 @@ def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, m
     for n in news_raw:
         if not isinstance(n, dict):
             continue
+            
+        # Skip spam
+        if _is_spam(n):
+            continue
+
         # Check if date exists and is before end_date
         news_date = n.get('date', '')
         if news_date:
@@ -360,23 +367,41 @@ def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, m
             except:
                 pass  # If date parsing fails, include the news anyway
         
-        # Skip spam
-        summary = n.get('summary', '')
-        if summary and summary.startswith("Looking for stock market analysis and research with proves results?"):
-            continue
-        
         headline = n.get('headline', '')
+        summary = n.get('summary', '')
+        
         if headline and summary:
-            formatted_news.append(f"[Headline]: {headline}\n[Summary]: {summary}\n")
+            formatted_news.append(f"[Headline]: {headline}\\n[Summary]: {summary}\\n")
     
     basics = json.loads(row['Basics'])
     if basics:
-        basics_str = f"Some recent basic financials of {symbol}, reported at {basics['period']}, are presented below:\n\n[Basic Financials]:\n\n"
-        basics_str += "\n".join(f"{k}: {v}" for k, v in basics.items() if k != 'period')
+        basics_str = f"Some recent basic financials of {symbol}, reported at {basics['period']}, are presented below:\\n\\n[Basic Financials]:\\n\\n"
+        basics_str += "\\n".join(f"{k}: {v}" for k, v in basics.items() if k != 'period')
     else:
-        basics_str = "[Basic Financials]:\n\nNo basic financial reported."
+        basics_str = "[Basic Financials]:\\n\\nNo basic financial reported."
     
     return head, formatted_news, basics_str, news_raw
+
+
+def _is_spam(item: dict) -> bool:
+    """Check if a news item is spam/promotional."""
+    summary = item.get('summary', '')
+    if not summary:
+        return False
+    
+    # Common spam patterns
+    spam_phrases = [
+        "Looking for stock market analysis and research with proves results?",
+        "Zacks.com offers in-depth financial research",
+        "Click here to read my analysis",
+        "Click here to see why"
+    ]
+    
+    for phrase in spam_phrases:
+        if phrase in summary:
+            return True
+            
+    return False
 
 
 def _parse_news_date(date_str: str) -> Optional[datetime]:
@@ -440,41 +465,64 @@ def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str,
     
     # Prepare news list for LLM
     news_text = ""
-    valid_news = [n for n in news if isinstance(n, dict)]
+    valid_news = [n for n in news if isinstance(n, dict) and not _is_spam(n)]
+    
+    # Pre-rank by relevance to ensure we fit in context if list is huge
+    # We keep top 50 candidates for the LLM to choose from
+    # if len(valid_news) > 50:
+    #      valid_news = sorted(valid_news, key=lambda n: _score_news_item(n, None), reverse=True)[:50]
+
     for i, n in enumerate(valid_news):
         headline = n.get('headline', 'No Headline')
         summary = n.get('summary', 'No Summary')
         date = n.get('date', 'Unknown Date')
-        news_text += f"ID {i}: [{date}] {headline} - {summary}\n"
+        news_text += f"ID {i}: [{date}] {headline} - {summary}\\n"
 
-    # Format context strings
-    stock_dir = "rose" if stock_return >= 0 else "fell"
-    market_dir = "rose" if market_return >= 0 else "fell"
-    stock_pct = abs(stock_return) * 100
-    market_pct = abs(market_return) * 100
+    # Define scenario instruction dynamically
+    scenario_instruction = ""
     
-    alpha_desc = "Outperformed" if alpha > 0 else "Underperformed"
-    vol_desc = "Normal"
-    if vol_z > 2.0: vol_desc = "HUGE (Significant Activity)"
-    elif vol_z > 1.0: vol_desc = "High"
+    # Priority 1: Extreme Volume (Something big happened)
+    if vol_z > 2.0:
+        scenario_instruction = f"""
+CRITICAL CONTEXT: TRADING VOLUME WAS EXTREME (Z-Score: {vol_z:.1f}).
+Something significant happened. You MUST prioritize news about Earnings, M&A, FDA approvals, or major contracts.
+Ignore minor press releases. Focus on the catalyst for this volume."""
+    
+    # Priority 2: Significant Negative Alpha
+    elif alpha < -0.02:
+        scenario_instruction = f"""
+CONTEXT: The stock SIGNIFICANTLY UNDERPERFORMED the market (Alpha: {alpha*100:.2f}%).
+You must prioritize negative company-specific news (downgrades, lawsuits, missed earnings) that explains this drop.
+If the summary is generic, score it low."""
 
-    system_prompt = f"""You are a financial analyst. Your task is to select {k} news items that EXPLAIN the actual performance of {symbol}.
+    # Priority 3: Significant Positive Alpha
+    elif alpha > 0.02:
+        scenario_instruction = f"""
+CONTEXT: The stock SIGNIFICANTLY OUTPERFORMED the market (Alpha: {alpha*100:.2f}%).
+You must prioritize positive company-specific catalysts (upgrades, partnerships, beats)."""
 
-[THE REALITY (FACIT)]:
-- {symbol} return: {stock_return*100:.2f}%
-- Alpha (vs {market_name}): {alpha*100:.2f}%
-- Volume Z-Score: {vol_z:.1f}
+    # Priority 4: Normal/Boring week
+    else:
+        scenario_instruction = """
+CONTEXT: The stock moved in line with the market with normal volume.
+Do not try to force a narrative if no major news exists. Pick representative news items that reflect the general sentiment.
+It is acceptable to pick fewer items if nothing is relevant."""
 
-[SELECTION RULES]:
-1. If Alpha is NEGATIVE: You MUST prioritize company-specific news that justifies underperformance (bad earnings, analyst downgrades, internal issues).
-2. If Alpha is POSITIVE: You MUST prioritize company-specific catalysts that justify outperformance.
-3. If Volume is HIGH (>1.5): You MUST look for major event-driven news (M&A, huge deals, scandals).
-4. Ignore generic market "noise" if there are company-specific factors available.
-5. Assign a sentiment score (-1 to 1) to each selected news item.
+    system_prompt = f"""You are a financial analyst selecting news for {symbol}.
 
-Return ONLY a JSON list of objects with 'id' and 'score', e.g.:
-[{"id": 0, "score": 0.8}, {"id": 4, "score": -0.5}, {"id": 12, "score": 0.2}]
-Do not include any other text."""
+[MARKET DATA]
+- Return: {stock_return*100:.2f}%
+- Alpha: {alpha*100:.2f}%
+- Volume Z: {vol_z:.1f}
+
+[INSTRUCTIONS]
+{scenario_instruction}
+
+[OUTPUT RULES]
+- Select up to {k} items.
+- Assign a sentiment score (-1 to 1) relative to the stock price impact.
+- Return ONLY a JSON list: [{{"id": 0, "score": 0.8}}, ...]
+"""
 
     try:
         completion = client.chat.completions.create(
@@ -525,7 +573,7 @@ Do not include any other text."""
             return selected[:k]
 
     except Exception as e:
-        print(f"    LLM News Selection Failed: {e}. Falling back to relevance scoring.")
+        # print(f"    LLM News Selection Failed: {e}. Falling back to relevance scoring.")
         return rank_news_by_relevance(news, None)[:k]
 
 
@@ -570,7 +618,7 @@ def format_news_items(news_items: list) -> list:
                 score_str = f" (Sentiment: {sign}{score:.2f})"
 
             if headline or summary:
-                formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
+                formatted.append(f"[Headline]{score_str}: {headline}\\n[Summary]: {summary}\\n")
         elif isinstance(item, str):
             formatted.append(item)
     return formatted
@@ -641,7 +689,7 @@ def get_all_prompts(
             idx = min(random.choice(range(min_past_weeks, max_past_weeks + 1)), len(prev_rows))
             for i in range(-idx, 0):
                 p_row = prev_rows[i]
-                prompt += "\n" + p_row[0]
+                prompt += "\\n" + p_row[0]
                 
                 # Extract data safely handling different tuple lengths (backwards compatibility)
                 raw_news = p_row[3] if len(p_row) > 3 else p_row[1]
@@ -667,11 +715,11 @@ def get_all_prompts(
                 )
                 formatted = format_news_items(sampled_news)
                 if formatted:
-                    prompt += "\n".join(formatted)
+                    prompt += "\\n".join(formatted)
                 else:
                     prompt += "No relative news reported."
 
-        head, news_formatted, basics, news_raw = get_prompt_by_row(symbol, row, market_return, market_name)
+        head, news_formatted, basics, news_raw = get_prompt_by_row(symbol, row, market_ret, market_name)
         # Store extended data: (head, news, basics, raw_news, start_date, end_date, stock_ret, market_ret, alpha, vol_z)
         prev_rows.append((head, news_formatted, basics, news_raw, row['Start Date'], row['End Date'], stock_ret, market_ret, alpha, vol_z))
         
@@ -684,8 +732,8 @@ def get_all_prompts(
         prediction = map_bin_label(row['Bin Label'])
         
         # Build the full prompt (for GPT-4 to generate analysis)
-        prompt = company_prompt + '\n' + prompt + '\n' + basics
-        prompt += f"\n\nBased on all the information before {row['Start Date']}, let's first analyze the positive developments and potential concerns for {symbol}. Come up with 2-4 most important factors respectively and keep them concise. Most factors should be inferred from company related news. "
+        prompt = company_prompt + '\\n' + prompt + '\\n' + basics
+        prompt += f"\\n\\nBased on all the information before {row['Start Date']}, let's first analyze the positive developments and potential concerns for {symbol}. Come up with 2-4 most important factors respectively and keep them concise. Most factors should be inferred from company related news. "
         prompt += f"Then let's assume your prediction for next week ({row['Start Date']} to {row['End Date']}) is {prediction}. Provide a summary analysis to support your prediction. The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis."
 
         all_prompts.append((prompt.strip(), prediction, row['Start Date'], row['End Date']))
@@ -723,7 +771,7 @@ def query_ollama(prompt: str, system_prompt: str, model: str = "llama3.1", base_
             f"{base_url}/api/generate",
             json={
                 "model": model,
-                "prompt": f"{system_prompt}\n\nUser: {prompt}\n\nAssistant:",
+                "prompt": f"{system_prompt}\\n\\nUser: {prompt}\\n\\nAssistant:",
                 "stream": False,
                 "options": {"temperature": 0.7, "num_predict": 1000}
             },
@@ -775,7 +823,7 @@ def process_single_prompt(
                 import time
                 time.sleep(2 ** attempt)  # Exponential backoff
             else:
-                print(f"\n    FAILED {symbol}-{index} after 5 retries: {e}")
+                print(f"\\n    FAILED {symbol}-{index} after 5 retries: {e}")
                 append_to_csv(csv_file, prompt, "", prediction, str(start_date), str(end_date), index)
                 return (index, False)
     
@@ -854,7 +902,7 @@ def query_llm(
         # Sequential mode (original behavior)
         for prompt_data in prompts_with_index:
             index = prompt_data[0]
-            print(f"    {symbol} - {index+1}/{total}", end='\r')
+            print(f"    {symbol} - {index+1}/{total}", end='\\r')
             process_single_prompt(client, prompt_data, csv_file, model, backend, symbol, total)
     else:
         # PARALLEL MODE - Much faster!
@@ -873,9 +921,9 @@ def query_llm(
                 try:
                     result_index, success = future.result()
                     status = "✓" if success else "✗"
-                    print(f"    {symbol} - {completed}/{total} {status}", end='\r')
+                    print(f"    {symbol} - {completed}/{total} {status}", end='\\r')
                 except Exception as e:
-                    print(f"\n    Error processing {symbol}-{index}: {e}")
+                    print(f"\\n    Error processing {symbol}-{index}: {e}")
     
     print(f"    {symbol} - Complete!                    ")
 
@@ -967,20 +1015,19 @@ def main():
     print("=" * 60)
     
     for symbol in sorted(symbols):
-        print(f"\nProcessing {symbol}...")
+        print(f"\\nProcessing {symbol}...")
         query_llm(
             openai_client, finnhub_client, symbol, args.data_dir,
             args.min_weeks, args.max_weeks, with_basics, args.model, args.backend,
             args.parallel, args.news_strategy
         )
     
-    print("\n" + "=" * 60)
+    print("\\n" + "=" * 60)
     print("COMPLETE!")
     print(f"Labels saved to: {args.data_dir}/*_gpt-4.csv")
     print("=" * 60)
-    print("\nNext step: Run build_dataset.py to create training dataset")
+    print("\\nNext step: Run build_dataset.py to create training dataset")
 
 
 if __name__ == "__main__":
     main()
-
