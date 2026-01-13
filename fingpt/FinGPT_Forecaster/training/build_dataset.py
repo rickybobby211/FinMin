@@ -38,7 +38,10 @@ SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list
 
 [Prediction & Analysis]
 Prediction: ...
-Analysis: ..."""
+Analysis: ...
+
+[Primary Driver]:
+Technical | Flow | Narrative | Mixed | Unknown"""
 
 
 # ============================================================================
@@ -67,10 +70,14 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_t
     
     df = pd.read_csv(csv_file)
     
+    # Check if primary_driver column exists
+    has_driver = 'primary_driver' in df.columns
+    
     prompts, answers, periods, labels, symbols = [], [], [], [], []
     
     for i, row in df.iterrows():
         prompt, answer = row['prompt'], row['answer']
+        primary_driver = row['primary_driver'] if has_driver and pd.notna(row['primary_driver']) else "Unknown"
         
         if pd.isna(answer) or not answer.strip():
             continue
@@ -88,19 +95,28 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_t
         period, label = res.group(1), res.group(2)
         
         # Transform the prompt: remove the "assume prediction" part
+        # Using [\s\S]*? to match any content (including newlines) between the start and end patterns
         prompt = re.sub(
-            r"Then let's assume your prediction for next week \((.*)\) is (?:up|down) by (?:.*%)%. Provide a summary analysis to support your prediction. The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis.",
+            r"Then let's assume your prediction for next week \((.*)\) is (?:up|down) by (?:.*?)%. Provide a summary analysis to support your prediction[\s\S]*?The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis.",
             f"Then make your prediction of the {symbol} stock price movement for next week ({period}). Provide a summary analysis to support your prediction.",
             prompt
         )
         
-        # Transform the answer: add explicit prediction line
+        # Transform the answer: add explicit prediction line AND primary driver
         try:
+            # First, check if Primary Driver is already in the answer text (from DeepSeek)
+            # If not, we append it.
+            driver_text = ""
+            if "[Primary Driver]" not in answer and has_driver:
+                driver_text = f"\n\n[Primary Driver]: {primary_driver}"
+            
             answer = re.sub(
                 r"\[Prediction & Analysis\]:\s*",
                 f"[Prediction & Analysis]:\nPrediction: {label.capitalize()}\nAnalysis: ",
                 answer
             )
+            answer += driver_text
+            
         except Exception as e:
             print(f"    Warning: Could not transform answer {i} for {symbol}: {e}")
             continue

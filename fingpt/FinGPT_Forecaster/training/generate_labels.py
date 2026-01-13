@@ -43,6 +43,29 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Optional
+from tqdm import tqdm  # Better progress bars
+
+# ============================================================================
+# MONKEYPATCH: Fix yfinance SSL error by forcing compatible chrome version
+# ============================================================================
+try:
+    import yfinance.data
+    from curl_cffi import requests as crequests
+    
+    # Original Session class
+    _original_session_cls = yfinance.data.requests.Session
+    
+    def _patched_session_cls(**kwargs):
+        # Force chrome110 if chrome is requested (default in yfinance)
+        # chrome110 works on this system, chrome fails with OPENSSL_internal
+        if kwargs.get('impersonate') == 'chrome':
+            kwargs['impersonate'] = 'chrome110'
+        return _original_session_cls(**kwargs)
+        
+    yfinance.data.requests.Session = _patched_session_cls
+    print("    [System] Applied yfinance SSL patch (using chrome110)")
+except Exception as e:
+    print(f"    [System] Could not apply yfinance SSL patch: {e}")
 
 # Load environment variables from .env file
 load_dotenv()
@@ -144,8 +167,8 @@ class MarketDataManager:
         except:
             return {}
 
-    def get_volume_z_score(self, symbol: str, date_str: str) -> float:
-        """Calculate Volume Z-Score."""
+    def get_volume_z_score(self, symbol: str, date_str: str) -> Optional[float]:
+        """Calculate Volume Z-Score. Returns None if data is unavailable."""
         try:
             df = self.get_data(symbol)
             dt = pd.to_datetime(date_str)
@@ -154,7 +177,7 @@ class MarketDataManager:
             prices = df[price_col]
             if dt not in prices.index:
                 idx_loc = prices.index.get_indexer([dt], method='pad')[0]
-                if idx_loc == -1: return 0.0
+                if idx_loc == -1: return None
                 dt = prices.index[idx_loc]
                 
             if 'Volume' in df.columns:
@@ -163,10 +186,10 @@ class MarketDataManager:
                     vol_mean = vol.rolling(window=20).mean().iloc[-1]
                     vol_std = vol.rolling(window=20).std().iloc[-1]
                     current_vol = vol.iloc[-1]
-                    return (current_vol - vol_mean) / vol_std if vol_std > 0 else 0.0
-            return 0.0
+                    return (current_vol - vol_mean) / vol_std if vol_std > 0 else None
+            return None
         except:
-            return 0.0
+            return None
 
     def get_technical_data(self, symbol: str, date_str: str) -> dict:
         """Calculate technical indicators and return as dict."""
@@ -204,7 +227,7 @@ class MarketDataManager:
             
             # WEEKLY RSI
             weekly_close = prices.resample('W').last().loc[:dt]
-            w_rsi_val = 0.0
+            w_rsi_val = None
             w_rsi_desc = "N/A"
             if len(weekly_close) > 15:
                 w_delta = weekly_close.diff()
@@ -223,17 +246,18 @@ class MarketDataManager:
             macd_desc = "Bullish Crossover" if macd.iloc[-1] > signal.iloc[-1] else "Bearish Crossover"
             
             # Volume Z-Score
-            vol_z = 0.0
-            vol_z_desc = "Normal"
+            vol_z = None
+            vol_z_desc = "N/A"
             if 'Volume' in df.columns:
                 vol = df['Volume'].loc[:dt]
                 if len(vol) >= 20:
                     vol_mean = vol.rolling(window=20).mean().iloc[-1]
                     vol_std = vol.rolling(window=20).std().iloc[-1]
-                    vol_z = (vol.iloc[-1] - vol_mean) / vol_std if vol_std > 0 else 0.0
-                    if vol_z > 2.0: vol_z_desc = f"HUGE (Z-Score: {vol_z:.1f})"
-                    elif vol_z > 1.0: vol_z_desc = f"High (Z-Score: {vol_z:.1f})"
-                    else: vol_z_desc = f"Normal (Z-Score: {vol_z:.1f})"
+                    vol_z = (vol.iloc[-1] - vol_mean) / vol_std if vol_std > 0 else None
+                    if vol_z is not None:
+                        if vol_z > 2.0: vol_z_desc = f"HUGE (Z-Score: {vol_z:.1f})"
+                        elif vol_z > 1.0: vol_z_desc = f"High (Z-Score: {vol_z:.1f})"
+                        else: vol_z_desc = f"Normal (Z-Score: {vol_z:.1f})"
             
             # ATR
             high = df['High'].loc[:dt]
@@ -270,6 +294,21 @@ SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list
 
 [Prediction & Analysis]:
 ...
+
+[Primary Driver]:
+Technical | Flow | Narrative | Mixed | Unknown
+
+Follow this analytical hierarchy:
+1. Technical Reality: Technical indicators (RSI, MACD, SMA50) define the boundaries of what is possible. Do not predict a rally if the stock is extremely overextended without a massive catalyst.
+2. Relative Performance: Always consider Alpha. If the stock is underperforming its index despite good news, look for hidden weaknesses.
+3. News Catalyst: Use news to explain the 'Why', but never let news justify a lie about the 'What' (the technical data).
+4. Dealing with "No News": If there are no specific company news but the price moved significantly, do NOT just say "absence of news". Instead, explicitly analyze the move as driven by market mechanics (e.g., "sector-level repricing", "institutional flows indicated by Volume Z-Score", "beta-driven momentum", or "technical breakout"). Avoid vague language; ascribe the move to market flows or technical structure if fundamental catalysts are missing.
+5. Primary Driver: Conclude your analysis by categorizing the main cause of the move into one of these tags:
+   - Technical: Move driven by chart patterns, oversold/bought conditions, or mean reversion.
+   - Flow: Move driven by volume, sector rotation, or broad market correlation (beta).
+   - Narrative: Move driven by specific company news, earnings, or macro events directly impacting the thesis.
+   - Mixed: A combination of strong news and technical setup.
+   - Unknown: No clear reason found.
 """
 
 
@@ -327,14 +366,30 @@ def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, m
     head += f"- Alpha vs {market_name}: {alpha_sign}{alpha_pct:.2f}% ({'Outperformed' if alpha >= 0 else 'Underperformed'})\\n"
     head += f"- Market Context (VIX): {vix_str}\\n"
     head += f"- Volume Status: {ta_data.get('vol_z_desc', 'N/A')}\\n"
-    head += f"- Volatility (ATR): {ta_data.get('atr', 0):.2f} ({ta_data.get('atr_desc', 'Normal')})\\n"
-    head += f"- Weekly RSI (Trend Strength): {ta_data.get('rsi_weekly', 0):.1f} ({ta_data.get('rsi_weekly_desc', 'N/A')})\\n\\n"
+    
+    # ATR - handle None values
+    atr_val = ta_data.get('atr')
+    atr_str = f"{atr_val:.2f}" if atr_val is not None else "N/A"
+    head += f"- Volatility (ATR): {atr_str} ({ta_data.get('atr_desc', 'N/A')})\\n"
+    
+    # Weekly RSI - handle None values
+    rsi_weekly_val = ta_data.get('rsi_weekly')
+    rsi_weekly_str = f"{rsi_weekly_val:.1f}" if rsi_weekly_val is not None else "N/A"
+    head += f"- Weekly RSI (Trend Strength): {rsi_weekly_str} ({ta_data.get('rsi_weekly_desc', 'N/A')})\\n\\n"
     
     head += f"[TECHNICALS - DAILY]:\\n"
-    head += f"- Daily RSI: {ta_data.get('rsi_daily', 0):.1f} ({ta_data.get('rsi_daily_desc', 'N/A')})\\n"
+    
+    # Daily RSI - handle None values
+    rsi_daily_val = ta_data.get('rsi_daily')
+    rsi_daily_str = f"{rsi_daily_val:.1f}" if rsi_daily_val is not None else "N/A"
+    head += f"- Daily RSI: {rsi_daily_str} ({ta_data.get('rsi_daily_desc', 'N/A')})\\n"
     head += f"- Trend: {ta_data.get('trend', 'N/A')}\\n"
     head += f"- MACD: {ta_data.get('macd', 'N/A')}\\n"
-    head += f"- Mean Reversion: {ta_data.get('dist_sma50', 0):.1f}% from SMA50 ({ta_data.get('reversion_desc', 'N/A')})\\n\\n"
+    
+    # Mean Reversion - handle None values
+    dist_sma50_val = ta_data.get('dist_sma50')
+    dist_sma50_str = f"{dist_sma50_val:.1f}%" if dist_sma50_val is not None else "N/A"
+    head += f"- Mean Reversion: {dist_sma50_str} from SMA50 ({ta_data.get('reversion_desc', 'N/A')})\\n\\n"
     
     head += "[NEWS]:\\n"
     
@@ -467,10 +522,8 @@ def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str,
     news_text = ""
     valid_news = [n for n in news if isinstance(n, dict) and not _is_spam(n)]
     
-    # Pre-rank by relevance to ensure we fit in context if list is huge
-    # We keep top 50 candidates for the LLM to choose from
-    # if len(valid_news) > 50:
-    #      valid_news = sorted(valid_news, key=lambda n: _score_news_item(n, None), reverse=True)[:50]
+    # [OBSOLETE] Pre-rank 200 limit removed to rely on pre-filtering or LLM context capacity.
+    # If list is enormous without pre-filtering, DeepSeek can handle ~64k context.
 
     for i, n in enumerate(valid_news):
         headline = n.get('headline', 'No Headline')
@@ -482,7 +535,7 @@ def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str,
     scenario_instruction = ""
     
     # Priority 1: Extreme Volume (Something big happened)
-    if vol_z > 2.0:
+    if vol_z is not None and vol_z > 2.0:
         scenario_instruction = f"""
 CRITICAL CONTEXT: TRADING VOLUME WAS EXTREME (Z-Score: {vol_z:.1f}).
 Something significant happened. You MUST prioritize news about Earnings, M&A, FDA approvals, or major contracts.
@@ -508,12 +561,13 @@ CONTEXT: The stock moved in line with the market with normal volume.
 Do not try to force a narrative if no major news exists. Pick representative news items that reflect the general sentiment.
 It is acceptable to pick fewer items if nothing is relevant."""
 
+    vol_z_str = f"{vol_z:.1f}" if vol_z is not None else "N/A"
     system_prompt = f"""You are a financial analyst selecting news for {symbol}.
 
 [MARKET DATA]
 - Return: {stock_return*100:.2f}%
 - Alpha: {alpha*100:.2f}%
-- Volume Z: {vol_z:.1f}
+- Volume Z: {vol_z_str}
 
 [INSTRUCTIONS]
 {scenario_instruction}
@@ -577,10 +631,106 @@ It is acceptable to pick fewer items if nothing is relevant."""
         return rank_news_by_relevance(news, None)[:k]
 
 
+def pre_filter_news(news: list, symbol: str, client, model: str) -> list:
+    """
+    Stage 1: Cheap pre-filtering to remove noise using Gemini Flash Lite.
+    Instead of a fixed percentage, we ask the model to aggressively filter out noise
+    and keep only material news.
+    """
+    if not news or len(news) < 5:
+        return news
+        
+    valid_news = [n for n in news if isinstance(n, dict) and not _is_spam(n)]
+    if len(valid_news) < 5:
+        return valid_news
+
+    # Prepare simplified text
+    news_text = ""
+    for i, n in enumerate(valid_news):
+        headline = n.get('headline', 'No Headline')
+        date = n.get('date', '')
+        news_text += f"ID {i}: [{date}] {headline}\n"
+
+    system_prompt = f"""You are a strict financial news filter for {symbol}.
+Your task is to FILTER OUT all noise, fluff, and irrelevant news.
+Keep ONLY news items that are "material" and likely to move the stock price (e.g., Earnings, M&A, Regulatory, Major Products, Macro impacts).
+Discard routine upgrades/downgrades unless they are from major banks with significant price target changes.
+Discard generic market commentary.
+
+Return ONLY a JSON object with the list of kept IDs: {{ "ids": [0, 5, 12] }}."""
+
+    # Retry logic for Rate Limits (429)
+    # Retry INDEFINITELY until success for Rate Limits to ensure filtering happens
+    while True:
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": news_text}
+                ],
+                temperature=0.0,
+                max_tokens=500
+            )
+            response = completion.choices[0].message.content.strip()
+            
+            # Clean response
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0].strip()
+
+            import json
+            try:
+                data = json.loads(response)
+                ids = data.get("ids", [])
+                
+                # Fallback if list is flat
+                if isinstance(data, list):
+                    ids = data
+            except json.JSONDecodeError:
+                # Fallback: regex search for numbers
+                # Looks for patterns like "ids": [1, 2, 3] or just [1, 2, 3]
+                import re
+                ids = [int(x) for x in re.findall(r'\d+', response)]
+                # Sanity check: if too many numbers (e.g. dates), be careful.
+                # But since we asked for IDs only, usually fine.
+                
+            selected = []
+            for i in ids:
+                if isinstance(i, int) and i < len(valid_news):
+                    selected.append(valid_news[i])
+            
+            if not selected:
+                # If model filtered everything, it might mean everything was noise.
+                # However, DeepSeek needs *something* to work with if possible, or maybe it's fine to have empty news.
+                # Let's keep at least the top 1 most recent just in case, or trust the filter.
+                # TRUST THE FILTER: If Gemini says it's all noise, we return empty list.
+                print(f"    [Pre-Filter] {symbol}: All {len(valid_news)} items filtered as noise.")
+                return []
+                
+            print(f"    [Pre-Filter] {symbol}: Kept {len(selected)}/{len(valid_news)} material items")
+            return selected
+
+        except Exception as e:
+            # Handle Rate Limits with backoff - WAIT FOREVER
+            if "429" in str(e):
+                import time
+                sleep_time = 10 + (random.random() * 5) # Wait at least 10-15 seconds
+                # print(f"    [Pre-Filter] Rate limit (429). Waiting {sleep_time:.1f}s...")
+                time.sleep(sleep_time)
+                continue
+            
+            # Other errors (non-429) -> Skip filter
+            print(f"    [Pre-Filter] Failed (Non-429): {e}. Passing all news.")
+            return valid_news
+
+
 def sample_news(news: list, k: int = 5, strategy: str = "relevant", end_date: Optional[str] = None, 
                 symbol: str = "", client = None, model: str = "",
                 stock_return: float = 0.0, market_return: float = 0.0, market_name: str = "Market",
-                alpha: float = 0.0, vol_z: float = 0.0) -> list:
+                alpha: float = 0.0, vol_z: float = 0.0,
+                pre_filter_client = None, pre_filter_model: str = "") -> list:
     """
     Select up to k news items using a strategy:
     - "relevant": deterministic top-k by recency + information richness + keywords
@@ -594,7 +744,13 @@ def sample_news(news: list, k: int = 5, strategy: str = "relevant", end_date: Op
         return [news[i] for i in sorted(random.sample(range(len(news)), k))]
     
     if strategy == "llm" and client and symbol:
-        return rank_news_with_llm(news, k, symbol, client, model, stock_return, market_return, market_name, alpha, vol_z)
+        # --- NEW: Stage 1 Pre-Filtering ---
+        target_news = news
+        if pre_filter_client and pre_filter_model:
+            target_news = pre_filter_news(news, symbol, pre_filter_client, pre_filter_model)
+        
+        # --- Stage 2: DeepSeek/Main LLM Selection (Original Logic) ---
+        return rank_news_with_llm(target_news, k, symbol, client, model, stock_return, market_return, market_name, alpha, vol_z)
 
     ranked = rank_news_by_relevance(news, end_date)
     return ranked[:k]
@@ -648,7 +804,10 @@ def get_all_prompts(
     with_basics: bool = True,
     news_strategy: str = "relevant",
     client = None,  # Pass LLM client down
-    model: str = "" # Pass model name down
+    model: str = "", # Pass model name down
+    parallel: int = 1, # Added parallel support
+    pre_filter_client = None,
+    pre_filter_model: str = ""
 ) -> list:
     """
     Generate all prompts for a symbol from the prepared data.
@@ -674,70 +833,127 @@ def get_all_prompts(
     market_symbol = "QQQ" if symbol in tech_stocks else "SPY"
     market_name = "Nasdaq-100" if market_symbol == "QQQ" else "S&P 500"
 
-    prev_rows = []
-    all_prompts = []
-
+    # --- STEP 1: Pre-process all rows (Lightweight & Sequential) ---
+    # We gather all technicals, basics, and raw news first without calling LLM.
+    print(f"    Pre-processing {len(df)} rows for {symbol}...")
+    processed_rows = []
+    
     for row_idx, row in df.iterrows():
         # Get returns and metrics for current row
         stock_ret = row['Weekly Returns']
         market_ret = market_manager.get_return(market_symbol, row['Start Date'], row['End Date'])
         alpha = stock_ret - market_ret
         vol_z = market_manager.get_volume_z_score(symbol, row['End Date'])
-
-        prompt = ""
-        if len(prev_rows) >= min_past_weeks:
-            idx = min(random.choice(range(min_past_weeks, max_past_weeks + 1)), len(prev_rows))
-            for i in range(-idx, 0):
-                p_row = prev_rows[i]
-                prompt += "\\n" + p_row[0]
-                
-                # Extract data safely handling different tuple lengths (backwards compatibility)
-                raw_news = p_row[3] if len(p_row) > 3 else p_row[1]
-                p_stock_ret = p_row[6] if len(p_row) >= 8 else 0.0
-                p_market_ret = p_row[7] if len(p_row) >= 8 else 0.0
-                p_alpha = p_row[8] if len(p_row) >= 10 else (p_stock_ret - p_market_ret)
-                p_vol_z = p_row[9] if len(p_row) >= 10 else 0.0
-                p_end_date = p_row[5] if len(p_row) >= 8 else row['End Date']
-
-                sampled_news = sample_news(
-                    raw_news,
-                    min(5, len(raw_news)),
-                    strategy=news_strategy,
-                    end_date=p_end_date,
-                    symbol=symbol,
-                    client=client,
-                    model=model,
-                    stock_return=p_stock_ret,
-                    market_return=p_market_ret,
-                    market_name=market_name,
-                    alpha=p_alpha,
-                    vol_z=p_vol_z
-                )
-                formatted = format_news_items(sampled_news)
-                if formatted:
-                    prompt += "\\n".join(formatted)
-                else:
-                    prompt += "No relative news reported."
-
+        
+        # Get formatted data (no LLM calls here yet)
         head, news_formatted, basics, news_raw = get_prompt_by_row(symbol, row, market_ret, market_name)
-        # Store extended data: (head, news, basics, raw_news, start_date, end_date, stock_ret, market_ret, alpha, vol_z)
-        prev_rows.append((head, news_formatted, basics, news_raw, row['Start Date'], row['End Date'], stock_ret, market_ret, alpha, vol_z))
         
-        if len(prev_rows) > max_past_weeks:
-            prev_rows.pop(0)
+        # Store everything needed for prompt construction
+        processed_rows.append({
+            "idx": row_idx,
+            "head": head,
+            "news_formatted": news_formatted, # Default formatted news
+            "basics": basics,
+            "news_raw": news_raw,
+            "start_date": row['Start Date'],
+            "end_date": row['End Date'],
+            "stock_ret": stock_ret,
+            "market_ret": market_ret,
+            "alpha": alpha,
+            "vol_z": vol_z,
+            "bin_label": row['Bin Label']
+        })
 
-        if not prompt:
-            continue
-
-        prediction = map_bin_label(row['Bin Label'])
-        
-        # Build the full prompt (for GPT-4 to generate analysis)
-        prompt = company_prompt + '\\n' + prompt + '\\n' + basics
-        prompt += f"\\n\\nBased on all the information before {row['Start Date']}, let's first analyze the positive developments and potential concerns for {symbol}. Come up with 2-4 most important factors respectively and keep them concise. Most factors should be inferred from company related news. "
-        prompt += f"Then let's assume your prediction for next week ({row['Start Date']} to {row['End Date']}) is {prediction}. Provide a summary analysis to support your prediction. The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis."
-
-        all_prompts.append((prompt.strip(), prediction, row['Start Date'], row['End Date']))
+    # --- STEP 2: Construct Prompts (Heavy if using LLM for news) ---
+    # This step is now parallelized!
     
+    def _build_single_prompt_worker(p_row):
+        # Determine history window
+        curr_idx = p_row["idx"]
+        
+        # If not enough history, skip
+        if curr_idx < min_past_weeks:
+            return None
+
+        # Randomly choose history length
+        # Note: In parallel execution, random is thread-safe enough for this
+        hist_len = min(random.choice(range(min_past_weeks, max_past_weeks + 1)), curr_idx)
+        
+        prompt_parts = []
+        
+        # Build history context
+        for i in range(curr_idx - hist_len, curr_idx):
+            hist_row = processed_rows[i]
+            prompt_parts.append("\\n" + hist_row["head"])
+            
+            # NEWS SELECTION (The heavy part if using LLM)
+            # We use the raw news from the historical row
+            sampled_news = sample_news(
+                hist_row["news_raw"],
+                min(5, len(hist_row["news_raw"])),
+                strategy=news_strategy,
+                end_date=hist_row["end_date"],
+                symbol=symbol,
+                client=client,
+                model=model,
+                stock_return=hist_row["stock_ret"],
+                market_return=hist_row["market_ret"],
+                market_name=market_name,
+                alpha=hist_row["alpha"],
+                vol_z=hist_row["vol_z"],
+                pre_filter_client=pre_filter_client,
+                pre_filter_model=pre_filter_model
+            )
+            
+            formatted = format_news_items(sampled_news)
+            if formatted:
+                prompt_parts.append("\\n".join(formatted))
+            else:
+                prompt_parts.append("No relative news reported.")
+
+        # Add current row context (Target)
+        # Note: The prompt asks to predict NEXT week, so we provide info UP TO start_date
+        # p_row["basics"] and p_row["head"] contain info ending at p_row["end_date"]? 
+        # Wait, the prompt structure in original code was:
+        # prompt = company + history + basics + instruction
+        # And history was built from prev_rows.
+        
+        prompt_str = ""
+        prompt_str += "\\n".join(prompt_parts)
+        
+        prediction = map_bin_label(p_row["bin_label"])
+        
+        # Build final prompt string
+        full_prompt = company_prompt + '\\n' + prompt_str + '\\n' + p_row["basics"]
+        full_prompt += f"\\n\\nBased on all the information before {p_row['start_date']}, let's first analyze the positive developments and potential concerns for {symbol}. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. "
+        full_prompt += f"Then let's assume your prediction for next week ({p_row['start_date']} to {p_row['end_date']}) is {prediction}. Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If the prediction is {prediction} but the technicals show a conflict (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically (e.g., as a 'trend reversal' or 'short squeeze') rather than ignoring the data. The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis."
+
+        return (full_prompt.strip(), prediction, p_row['start_date'], p_row['end_date'])
+
+    all_prompts = []
+    
+    # Run parallel construction
+    print(f"    Generating prompts (Parallel={parallel})...")
+    if parallel > 1 and news_strategy == 'llm':
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            # Create futures
+            futures = [executor.submit(_build_single_prompt_worker, row) for row in processed_rows]
+            
+            for future in tqdm(as_completed(futures), total=len(futures), desc=f"    {symbol} Prompts", unit="gen"):
+                res = future.result()
+                if res:
+                    all_prompts.append(res)
+    else:
+        # Sequential fallback (or if not using LLM for news, it's fast enough)
+        for row in tqdm(processed_rows, desc=f"    {symbol} Prompts", unit="gen"):
+            res = _build_single_prompt_worker(row)
+            if res:
+                all_prompts.append(res)
+
+    # Sort by date just to be clean (parallel execution might scramble order)
+    all_prompts.sort(key=lambda x: x[2]) # Sort by start_date
+    
+    print(f"    DEBUG: Generated {len(all_prompts)} prompts for {symbol}.")
     return all_prompts
 
 
@@ -745,7 +961,12 @@ def get_all_prompts(
 # GPT-4 QUERY FUNCTIONS
 # ============================================================================
 
-# Thread-safe CSV writer lock
+# Semaphore to control DeepSeek concurrency SEPARATELY from pre-filter
+# Allow high concurrency for pre-filter (limited by Rate Limit retry) but
+# allow user to control DeepSeek load if needed.
+# Actually, the `parallel` arg controls the ThreadPool size, which limits EVERYTHING.
+# To separate them, we would need two thread pools or a semaphore inside the worker.
+# For now, let's trust the user's --parallel setting but ensure pre-filter waits.
 csv_lock = threading.Lock()
 
 
@@ -753,15 +974,15 @@ def initialize_csv(filename: str):
     """Initialize CSV file with headers."""
     with open(filename, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        writer.writerow(["prompt", "answer", "prediction", "start_date", "end_date", "index"])
+        writer.writerow(["prompt", "answer", "prediction", "start_date", "end_date", "index", "primary_driver"])
 
 
-def append_to_csv(filename: str, prompt: str, answer: str, prediction: str, start_date: str, end_date: str, index: int = 0):
+def append_to_csv(filename: str, prompt: str, answer: str, prediction: str, start_date: str, end_date: str, index: int = 0, primary_driver: str = "Unknown"):
     """Append a row to the CSV file (thread-safe)."""
     with csv_lock:
         with open(filename, mode='a', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            writer.writerow([prompt, answer, prediction, start_date, end_date, index])
+            writer.writerow([prompt, answer, prediction, start_date, end_date, index, primary_driver])
 
 
 def query_ollama(prompt: str, system_prompt: str, model: str = "llama3.1", base_url: str = "http://localhost:11434") -> str:
@@ -773,7 +994,7 @@ def query_ollama(prompt: str, system_prompt: str, model: str = "llama3.1", base_
                 "model": model,
                 "prompt": f"{system_prompt}\\n\\nUser: {prompt}\\n\\nAssistant:",
                 "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 1000}
+                "options": {"temperature": 0.4, "num_predict": 1000}
             },
             timeout=120
         )
@@ -805,18 +1026,40 @@ def process_single_prompt(
                 answer = query_ollama(prompt, SYSTEM_PROMPT, model)
             else:
                 # OpenAI / DeepSeek backend (same API format)
-                completion = client.chat.completions.create(
-                    model=model,
-                    messages=[
+                kwargs = {
+                    "model": model,
+                    "messages": [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.7,
-                    max_tokens=1000
-                )
+                    "max_tokens": 4000 # Increased for reasoner output if needed, though split
+                }
+                
+                # DeepSeek Reasoner does not support temperature/top_p
+                if "reasoner" not in model:
+                    kwargs["temperature"] = 0.4
+                
+                completion = client.chat.completions.create(**kwargs)
                 answer = completion.choices[0].message.content
+                
+                # Clean <think> tags if present (DeepSeek Reasoner sometimes includes them or if we use specific format)
+                # Note: DeepSeek API usually separates 'reasoning_content', but we ensure 'content' is clean just in case.
+                if answer and "<think>" in answer:
+                    answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
             
-            append_to_csv(csv_file, prompt, answer, prediction, str(start_date), str(end_date), index)
+            # Extract Primary Driver using Regex
+            primary_driver = "Unknown"
+            try:
+                # Matches [Primary Driver]: Technical (or similar)
+                match = re.search(r"\[Primary Driver\]:\s*(.*)", answer, re.IGNORECASE)
+                if match:
+                    primary_driver = match.group(1).strip()
+                    # Clean up if model added extra punctuation
+                    primary_driver = primary_driver.split('\n')[0].strip()
+            except:
+                pass
+
+            append_to_csv(csv_file, prompt, answer, prediction, str(start_date), str(end_date), index, primary_driver)
             return (index, True)
         except Exception as e:
             if attempt < 4:
@@ -824,7 +1067,7 @@ def process_single_prompt(
                 time.sleep(2 ** attempt)  # Exponential backoff
             else:
                 print(f"\\n    FAILED {symbol}-{index} after 5 retries: {e}")
-                append_to_csv(csv_file, prompt, "", prediction, str(start_date), str(end_date), index)
+                append_to_csv(csv_file, prompt, "", prediction, str(start_date), str(end_date), index, "Unknown")
                 return (index, False)
     
     return (index, False)
@@ -841,7 +1084,9 @@ def query_llm(
     model: str = "gpt-3.5-turbo",
     backend: str = "openai",
     parallel: int = 1,  # Number of parallel requests
-    news_strategy: str = "relevant"
+    news_strategy: str = "relevant",
+    pre_filter_client = None,
+    pre_filter_model: str = ""
 ):
     """
     Query LLM to generate analysis for all prompts of a symbol.
@@ -876,7 +1121,10 @@ def query_llm(
         with_basics,
         news_strategy,
         client=client,
-        model=model
+        model=model,
+        parallel=parallel,  # Pass parallel arg
+        pre_filter_client=pre_filter_client,
+        pre_filter_model=pre_filter_model
     )
     
     if not prompts:
@@ -900,13 +1148,12 @@ def query_llm(
 
     if parallel <= 1:
         # Sequential mode (original behavior)
-        for prompt_data in prompts_with_index:
+        for prompt_data in tqdm(prompts_with_index, desc=f"    {symbol}", unit="prompt"):
             index = prompt_data[0]
-            print(f"    {symbol} - {index+1}/{total}", end='\\r')
             process_single_prompt(client, prompt_data, csv_file, model, backend, symbol, total)
     else:
         # PARALLEL MODE - Much faster!
-        completed = len(done_indices)
+        # completed = len(done_indices)
         with ThreadPoolExecutor(max_workers=parallel) as executor:
             futures = {
                 executor.submit(
@@ -915,15 +1162,14 @@ def query_llm(
                 for prompt_data in prompts_with_index
             }
             
-            for future in as_completed(futures):
-                index = futures[future]
-                completed += 1
+            # Use tqdm for progress tracking
+            for future in tqdm(as_completed(futures), total=len(futures), desc=f"    {symbol} (Parallel)", unit="prompt"):
                 try:
                     result_index, success = future.result()
-                    status = "✓" if success else "✗"
-                    print(f"    {symbol} - {completed}/{total} {status}", end='\\r')
+                    # status = "✓" if success else "✗"
+                    # print(f"    {symbol} - {completed}/{total} {status}", end='\\r')
                 except Exception as e:
-                    print(f"\\n    Error processing {symbol}-{index}: {e}")
+                    print(f"\\n    Error processing {symbol}: {e}")
     
     print(f"    {symbol} - Complete!                    ")
 
@@ -950,6 +1196,8 @@ def main():
     parser.add_argument('--news_strategy', type=str, default='relevant',
                         choices=['relevant', 'random', 'llm'],
                         help='How to pick news snippets: relevant (ranked), random, or llm (DeepSeek picks)')
+    parser.add_argument('--pre_filter', action='store_true',
+                        help='Use cheap model (Gemini/OpenRouter) to filter 80%% of news before DeepSeek')
     args = parser.parse_args()
     
     # Setup backend
@@ -967,9 +1215,9 @@ def main():
             api_key=deepseek_api_key,
             base_url="https://api.deepseek.com"
         )
-        # Default to deepseek-chat if no model specified
+        # Default to deepseek-reasoner if no model specified
         if args.model == "gpt-3.5-turbo":
-            args.model = "deepseek-chat"
+            args.model = "deepseek-reasoner"
         print(f"Using DeepSeek API with model: {args.model}")
     elif args.backend == "ollama":
         # Test Ollama connection
@@ -984,6 +1232,24 @@ def main():
         except Exception as e:
             raise ValueError(f"Cannot connect to Ollama at localhost:11434. Is it running? Error: {e}")
     
+    # Setup Pre-Filter Client (OpenRouter / Gemini)
+    pre_filter_client = None
+    pre_filter_model = "google/gemini-2.0-flash-lite-001"
+    
+    if args.pre_filter:
+        print(f"[Pre-Filter] Enabled. Using OpenRouter ({pre_filter_model})")
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+        if not openrouter_key:
+             # Fallback to DeepSeek Key if OpenRouter not set, but warn
+            print("    WARNING: OPENROUTER_API_KEY not found for pre-filter.")
+            print("    Please set OPENROUTER_API_KEY for free Gemini access.")
+            raise ValueError("Missing OPENROUTER_API_KEY")
+            
+        pre_filter_client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=openrouter_key,
+        )
+
     # Finnhub is optional (used for company profiles)
     finnhub_client = None
     finnhub_api_key = os.environ.get("FINNHUB_API_KEY")
@@ -1019,7 +1285,9 @@ def main():
         query_llm(
             openai_client, finnhub_client, symbol, args.data_dir,
             args.min_weeks, args.max_weeks, with_basics, args.model, args.backend,
-            args.parallel, args.news_strategy
+            args.parallel, args.news_strategy,
+            pre_filter_client=pre_filter_client,
+            pre_filter_model=pre_filter_model
         )
     
     print("\\n" + "=" * 60)
