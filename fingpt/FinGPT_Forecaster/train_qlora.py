@@ -260,6 +260,10 @@ if __name__ == "__main__":
     parser.add_argument("--load_in_4bit", action='store_true', help="Load model in 4-bit precision")    
     args = parser.parse_args()
     
-    wandb.login()
+    if os.environ.get('WANDB_API_KEY'):
+        wandb.login(key=os.environ.get('WANDB_API_KEY'))
+    else:
+        wandb.login()
+        
     main(args)
 
