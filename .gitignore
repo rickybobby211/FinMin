@@ -140,3 +140,13 @@ FinGPT_Training_LoRA_with_Chatglm2_6b_for_beginners.ipynb
 # Benchmark data
 fingpt/FinGPT_Benchmark/data/*/**
 .~lock.*
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/CRM_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/CSCO_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/GOOGL_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/IBM_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/INTC_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/META_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/MSFT_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/NVDA_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/TSLA_gpt-4.csv
+fingpt/FinGPT_Forecaster/training/raw_data/2023-01-01_2026-01-01/TSM_gpt-4.csv
