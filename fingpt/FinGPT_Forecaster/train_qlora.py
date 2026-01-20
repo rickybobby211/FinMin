@@ -33,10 +33,11 @@ os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
 
 class GenerationEvalCallback(TrainerCallback):
     
-    def __init__(self, eval_dataset, base_model, tokenizer, ignore_until_epoch=0):
+    def __init__(self, eval_dataset, base_model, tokenizer, max_length, ignore_until_epoch=0):
         self.eval_dataset = eval_dataset
         self.base_model = base_model
         self.tokenizer = tokenizer
+        self.max_length = max_length
         self.ignore_until_epoch = ignore_until_epoch
         self.is_qwen = "qwen" in base_model.lower()
     
@@ -55,7 +56,7 @@ class GenerationEvalCallback(TrainerCallback):
                 gt = feature['answer']
                 inputs = tokenizer(
                     prompt, return_tensors='pt',
-                    padding=False, max_length=args.max_length
+                    padding=False, max_length=self.max_length
                 )
                 inputs = {key: value.to(model.device) for key, value in inputs.items()}
                 
@@ -219,6 +220,7 @@ def main(args):
                 eval_dataset=eval_dataset,
                 base_model=args.base_model,
                 tokenizer=tokenizer,
+                max_length=args.max_length,
                 ignore_until_epoch=round(0.3 * args.num_epochs)
             )
         ]
