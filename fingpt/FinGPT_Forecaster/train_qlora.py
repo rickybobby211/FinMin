@@ -128,23 +128,37 @@ def main(args):
             print(f"load_from_disk failed on root ({e}). Attempting manual construction...")
             
             try:
-                # We know the structure is flat based on the user's ls -R output
-                # training/datasets/fingpt-qwen-2025/train/
-                # training/datasets/fingpt-qwen-2025/test/
+                train_path = None
+                test_path = None
                 
-                train_path = os.path.join(dataset_fname, "train")
-                test_path = os.path.join(dataset_fname, "test")
+                # 1. Check direct path
+                if os.path.exists(os.path.join(dataset_fname, "train")):
+                    train_path = os.path.join(dataset_fname, "train")
+                    test_path = os.path.join(dataset_fname, "test")
                 
-                print(f"Checking paths:\nTrain: {train_path}\nTest: {test_path}")
+                # 2. Check nested paths (one level deep) - Auto-discovery
+                if not train_path:
+                    print(f"Direct 'train' folder not found in {dataset_fname}. Scanning subdirectories...")
+                    for item in os.listdir(dataset_fname):
+                        candidate = os.path.join(dataset_fname, item)
+                        if os.path.isdir(candidate):
+                            if os.path.exists(os.path.join(candidate, "train")):
+                                train_path = os.path.join(candidate, "train")
+                                test_path = os.path.join(candidate, "test")
+                                print(f"Found nested dataset in: {candidate}")
+                                break
                 
-                if not os.path.exists(train_path):
-                     # Handle the nested case just in case, though ls -R suggests flat
-                     nested_train_path = os.path.join(dataset_fname, "fingpt-qwen-2025", "train")
-                     if os.path.exists(nested_train_path):
-                         print(f"Found nested path: {nested_train_path}")
-                         train_path = nested_train_path
-                         test_path = os.path.join(dataset_fname, "fingpt-qwen-2025", "test")
+                if train_path is None:
+                     print(f"COULD NOT FIND 'train' DIRECTORY IN {dataset_fname} OR ANY SUBDIRECTORY.")
+                     print(f"Listing contents of {dataset_fname}:")
+                     try:
+                         print(os.listdir(dataset_fname))
+                     except Exception as list_e:
+                         print(f"Could not list directory: {list_e}")
+                     raise FileNotFoundError(f"Could not find train directory in {dataset_fname}")
                 
+                print(f"Using paths:\nTrain: {train_path}\nTest: {test_path}")
+
                 # Try explicit Dataset.load_from_disk first
                 from datasets import Dataset
                 try:
