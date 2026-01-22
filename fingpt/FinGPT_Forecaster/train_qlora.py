@@ -62,7 +62,8 @@ class GenerationEvalCallback(TrainerCallback):
                 
                 res = model.generate(
                     **inputs, 
-                    use_cache=True
+                    use_cache=True,
+                    max_new_tokens=512
                 )
                 # Decode with special tokens kept to parse ChatML when needed
                 full_output = tokenizer.decode(res[0], skip_special_tokens=False)
