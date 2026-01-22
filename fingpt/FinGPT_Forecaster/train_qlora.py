@@ -118,6 +118,7 @@ def main(args):
 
     # Direct loading for debugging/simplicity
     if not args.from_remote and os.path.exists(dataset_fname):
+        dataset_fname = os.path.abspath(dataset_fname)
         print(f"Loading dataset directly from disk: {dataset_fname}")
         from datasets import load_from_disk, DatasetDict
         try:
@@ -125,8 +126,12 @@ def main(args):
         except Exception as e:
             print(f"load_from_disk failed on root ({e}). Attempting to load train/test splits manually...")
             try:
-                train_ds = load_from_disk(os.path.join(dataset_fname, "train"))
-                test_ds = load_from_disk(os.path.join(dataset_fname, "test"))
+                train_path = os.path.join(dataset_fname, "train")
+                test_path = os.path.join(dataset_fname, "test")
+                print(f"Loading train from {train_path}")
+                print(f"Loading test from {test_path}")
+                train_ds = load_from_disk(train_path)
+                test_ds = load_from_disk(test_path)
                 raw_dataset = DatasetDict({"train": train_ds, "test": test_ds})
             except Exception as e2:
                 print(f"Manual split loading also failed: {e2}")
