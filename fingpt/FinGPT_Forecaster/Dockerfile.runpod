@@ -1,0 +1,30 @@
+# Vi använder en färdig image från Axolotl som redan har:
+# - PyTorch 2.3.1
+# - CUDA 12.1
+# - Flash Attention 2 (förinstallerat och fungerande!)
+# - Transformers, PEFT, Accelerate, Bitsandbytes
+FROM winglian/axolotl:main-20241025-py3.10-cu121-2.3.1
+
+# Ställ in arbetskatalogen
+WORKDIR /workspace
+
+# Ställ in miljövariabler
+ENV HF_HOME="/workspace/hf_cache"
+ENV TRANSFORMERS_CACHE="/workspace/hf_cache"
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Kopiera requirements-filen (den "lätta" versionen)
+COPY training/requirements_runpod.txt /workspace/requirements_runpod.txt
+
+# Installera BARA de extra paketen (detta går på några sekunder)
+RUN pip install --no-cache-dir -r /workspace/requirements_runpod.txt
+
+# Klona repot
+RUN git clone https://github.com/rickybobby211/FinMin.git /workspace/FinMin
+
+# Skapa cache-mappar
+RUN mkdir -p /workspace/hf_cache
+
+# Återställ entrypoint till bash och se till att den hålls vid liv
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

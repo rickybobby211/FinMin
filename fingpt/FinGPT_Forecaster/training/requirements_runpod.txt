@@ -1,0 +1,27 @@
+# FinGPT Forecaster - RunPod Requirements
+# Dessa paket installeras ovanpå den färdiga Axolotl-imagen.
+# Vi exkluderar torch, transformers, peft, accelerate, bitsandbytes, datasets
+# eftersom de redan finns i bas-imagen (och flash-attn!).
+
+# Data Processing
+pandas
+numpy
+scikit-learn
+
+# Data Fetching
+yfinance
+finnhub-python
+
+# OpenAI for labeling
+openai>=1.0.0
+
+# Metrics
+rouge-score
+
+# Logging (optional)
+wandb
+tensorboard
+
+# Utilities
+tqdm
+python-dotenv

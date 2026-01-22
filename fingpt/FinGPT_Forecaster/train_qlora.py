@@ -27,7 +27,7 @@ from peft import (
 )
 
 # Replace with your own api_key and project name
-os.environ['WANDB_API_KEY'] = ''    # TODO: Replace with your environment variable
+os.environ['WANDB_API_KEY'] = 'e3b4796f8d502e422d3604a92258b9f795f3b1fc'    # TODO: Replace with your environment variable
 os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
 
 
