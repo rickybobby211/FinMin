@@ -122,34 +122,58 @@ def main(args):
         print(f"Loading dataset directly from disk: {dataset_fname}")
         from datasets import load_from_disk, DatasetDict
         try:
+            # First try loading as a regular dataset dict
             raw_dataset = load_from_disk(dataset_fname)
         except Exception as e:
-            print(f"load_from_disk failed on root ({e}). Attempting to load train/test splits manually...")
+            print(f"load_from_disk failed on root ({e}). Attempting manual construction...")
+            
             try:
-                # IMPORTANT: Use Dataset.load_from_disk instead of datasets.load_from_disk for older versions 
-                # OR ensure we are pointing to the directory containing dataset_info.json
+                # We know the structure is flat based on the user's ls -R output
+                # training/datasets/fingpt-qwen-2025/train/
+                # training/datasets/fingpt-qwen-2025/test/
+                
                 train_path = os.path.join(dataset_fname, "train")
                 test_path = os.path.join(dataset_fname, "test")
                 
-                # Check if these directories actually exist
-                if not os.path.exists(train_path):
-                     print(f"TRAIN PATH DOES NOT EXIST: {train_path}")
-                else:
-                     print(f"TRAIN PATH EXISTS: {train_path}")
-                     print(f"TRAIN CONTENTS: {os.listdir(train_path)}")
-
-                if not os.path.exists(test_path):
-                     print(f"TEST PATH DOES NOT EXIST: {test_path}")
-                else:
-                     print(f"TEST PATH EXISTS: {test_path}")
-                     print(f"TEST CONTENTS: {os.listdir(test_path)}")
-
-                # Try loading with explicit Dataset class
-                from datasets import Dataset
-                train_ds = Dataset.load_from_disk(train_path)
-                test_ds = Dataset.load_from_disk(test_path)
+                print(f"Checking paths:\nTrain: {train_path}\nTest: {test_path}")
                 
+                if not os.path.exists(train_path):
+                     # Handle the nested case just in case, though ls -R suggests flat
+                     nested_train_path = os.path.join(dataset_fname, "fingpt-qwen-2025", "train")
+                     if os.path.exists(nested_train_path):
+                         print(f"Found nested path: {nested_train_path}")
+                         train_path = nested_train_path
+                         test_path = os.path.join(dataset_fname, "fingpt-qwen-2025", "test")
+                
+                # Try explicit Dataset.load_from_disk first
+                from datasets import Dataset
+                try:
+                    print("Attempting Dataset.load_from_disk...")
+                    train_ds = Dataset.load_from_disk(train_path)
+                    test_ds = Dataset.load_from_disk(test_path)
+                except Exception as e_ds:
+                    print(f"Dataset.load_from_disk failed ({e_ds}). Falling back to arrow loading...")
+                    # Fallback to arrow loading if the dataset metadata is corrupted/incompatible
+                    from datasets import load_dataset as hf_load_dataset
+                    
+                    def find_arrow(path):
+                        for f in os.listdir(path):
+                            if f.endswith('.arrow'):
+                                return os.path.join(path, f)
+                        raise FileNotFoundError(f"No arrow file in {path}")
+
+                    train_file = find_arrow(train_path)
+                    test_file = find_arrow(test_path)
+                    
+                    print(f"Loading arrow files:\nTrain: {train_file}\nTest: {test_file}")
+                    
+                    # Load them individually as 'arrow' datasets
+                    train_ds = hf_load_dataset("arrow", data_files={"train": train_file}, split="train")
+                    test_ds = hf_load_dataset("arrow", data_files={"test": test_file}, split="test")
+
                 raw_dataset = DatasetDict({"train": train_ds, "test": test_ds})
+                print("Manual dataset construction successful!")
+                
             except Exception as e2:
                 print(f"Manual split loading also failed: {e2}")
                 # Last ditch effort: Try loading as arrow files directly if they exist
