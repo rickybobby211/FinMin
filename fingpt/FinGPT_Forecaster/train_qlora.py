@@ -26,9 +26,9 @@ from peft import (
     set_peft_model_state_dict,   
 )
 
-# Replace with your own api_key and project name
-os.environ['WANDB_API_KEY'] = 'e3b4796f8d502e422d3604a92258b9f795f3b1fc'    # TODO: Replace with your environment variable
-os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
+# Set WANDB_PROJECT if not already set
+if not os.environ.get('WANDB_PROJECT'):
+    os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
 
 
 class GenerationEvalCallback(TrainerCallback):
@@ -119,8 +119,18 @@ def main(args):
     # Direct loading for debugging/simplicity
     if not args.from_remote and os.path.exists(dataset_fname):
         print(f"Loading dataset directly from disk: {dataset_fname}")
-        from datasets import load_from_disk
-        raw_dataset = load_from_disk(dataset_fname)
+        from datasets import load_from_disk, DatasetDict
+        try:
+            raw_dataset = load_from_disk(dataset_fname)
+        except Exception as e:
+            print(f"load_from_disk failed on root ({e}). Attempting to load train/test splits manually...")
+            try:
+                train_ds = load_from_disk(os.path.join(dataset_fname, "train"))
+                test_ds = load_from_disk(os.path.join(dataset_fname, "test"))
+                raw_dataset = DatasetDict({"train": train_ds, "test": test_ds})
+            except Exception as e2:
+                print(f"Manual split loading also failed: {e2}")
+                raise e
         
         # Ensure it is a DatasetDict
         if isinstance(raw_dataset, datasets.Dataset):
@@ -262,9 +272,13 @@ if __name__ == "__main__":
     parser.add_argument("--load_in_4bit", action='store_true', help="Load model in 4-bit precision")    
     args = parser.parse_args()
     
-    if os.environ.get('WANDB_API_KEY'):
-        wandb.login(key=os.environ.get('WANDB_API_KEY'))
+    # WANDB_API_KEY should be set as environment variable:
+    # export WANDB_API_KEY=your_api_key_here
+    wandb_api_key = os.environ.get('WANDB_API_KEY')
+    if wandb_api_key:
+        wandb.login(key=wandb_api_key)
     else:
+        print("Warning: WANDB_API_KEY not found in environment variables. Attempting to login with existing credentials...")
         wandb.login()
         
     main(args)
