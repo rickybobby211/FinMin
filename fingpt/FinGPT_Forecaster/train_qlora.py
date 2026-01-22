@@ -118,97 +118,9 @@ def main(args):
 
     # Direct loading for debugging/simplicity
     if not args.from_remote and os.path.exists(dataset_fname):
-        dataset_fname = os.path.abspath(dataset_fname)
         print(f"Loading dataset directly from disk: {dataset_fname}")
-        from datasets import load_from_disk, DatasetDict
-        try:
-            # First try loading as a regular dataset dict
-            raw_dataset = load_from_disk(dataset_fname)
-        except Exception as e:
-            print(f"load_from_disk failed on root ({e}). Attempting manual construction...")
-            
-            try:
-                train_path = None
-                test_path = None
-                
-                # 1. Check direct path
-                if os.path.exists(os.path.join(dataset_fname, "train")):
-                    train_path = os.path.join(dataset_fname, "train")
-                    test_path = os.path.join(dataset_fname, "test")
-                
-                # 2. Check nested paths (one level deep) - Auto-discovery
-                if not train_path:
-                    print(f"Direct 'train' folder not found in {dataset_fname}. Scanning subdirectories...")
-                    for item in os.listdir(dataset_fname):
-                        candidate = os.path.join(dataset_fname, item)
-                        if os.path.isdir(candidate):
-                            if os.path.exists(os.path.join(candidate, "train")):
-                                train_path = os.path.join(candidate, "train")
-                                test_path = os.path.join(candidate, "test")
-                                print(f"Found nested dataset in: {candidate}")
-                                break
-                
-                if train_path is None:
-                     print(f"COULD NOT FIND 'train' DIRECTORY IN {dataset_fname} OR ANY SUBDIRECTORY.")
-                     print(f"Listing contents of {dataset_fname}:")
-                     try:
-                         print(os.listdir(dataset_fname))
-                     except Exception as list_e:
-                         print(f"Could not list directory: {list_e}")
-                     raise FileNotFoundError(f"Could not find train directory in {dataset_fname}")
-                
-                print(f"Using paths:\nTrain: {train_path}\nTest: {test_path}")
-
-                # Try explicit Dataset.load_from_disk first
-                from datasets import Dataset
-                try:
-                    print("Attempting Dataset.load_from_disk...")
-                    train_ds = Dataset.load_from_disk(train_path)
-                    test_ds = Dataset.load_from_disk(test_path)
-                except Exception as e_ds:
-                    print(f"Dataset.load_from_disk failed ({e_ds}). Falling back to arrow loading...")
-                    # Fallback to arrow loading if the dataset metadata is corrupted/incompatible
-                    from datasets import load_dataset as hf_load_dataset
-                    
-                    def find_arrow(path):
-                        for f in os.listdir(path):
-                            if f.endswith('.arrow'):
-                                return os.path.join(path, f)
-                        raise FileNotFoundError(f"No arrow file in {path}")
-
-                    train_file = find_arrow(train_path)
-                    test_file = find_arrow(test_path)
-                    
-                    print(f"Loading arrow files:\nTrain: {train_file}\nTest: {test_file}")
-                    
-                    # Load them individually as 'arrow' datasets
-                    train_ds = hf_load_dataset("arrow", data_files={"train": train_file}, split="train")
-                    test_ds = hf_load_dataset("arrow", data_files={"test": test_file}, split="test")
-
-                raw_dataset = DatasetDict({"train": train_ds, "test": test_ds})
-                print("Manual dataset construction successful!")
-                
-            except Exception as e2:
-                print(f"Manual split loading also failed: {e2}")
-                # Last ditch effort: Try loading as arrow files directly if they exist
-                try:
-                    from datasets import load_dataset as hf_load_dataset
-                    print("Attempting to load as arrow files...")
-                    
-                    # Manually finding the arrow file
-                    train_arrow = [f for f in os.listdir(train_path) if f.endswith('.arrow')][0]
-                    test_arrow = [f for f in os.listdir(test_path) if f.endswith('.arrow')][0]
-                    
-                    data_files = {
-                        "train": os.path.join(train_path, train_arrow),
-                        "test": os.path.join(test_path, test_arrow)
-                    }
-                    print(f"Loading arrow files: {data_files}")
-                    raw_dataset = hf_load_dataset("arrow", data_files=data_files)
-                    print("Arrow file loading successful!")
-                except Exception as e3:
-                     print(f"Arrow loading failed: {e3}")
-                     raise e
+        from datasets import load_from_disk
+        raw_dataset = load_from_disk(dataset_fname)
         
         # Ensure it is a DatasetDict
         if isinstance(raw_dataset, datasets.Dataset):
