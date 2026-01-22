@@ -134,8 +134,15 @@ def main(args):
                 # Check if these directories actually exist
                 if not os.path.exists(train_path):
                      print(f"TRAIN PATH DOES NOT EXIST: {train_path}")
+                else:
+                     print(f"TRAIN PATH EXISTS: {train_path}")
+                     print(f"TRAIN CONTENTS: {os.listdir(train_path)}")
+
                 if not os.path.exists(test_path):
                      print(f"TEST PATH DOES NOT EXIST: {test_path}")
+                else:
+                     print(f"TEST PATH EXISTS: {test_path}")
+                     print(f"TEST CONTENTS: {os.listdir(test_path)}")
 
                 # Try loading with explicit Dataset class
                 from datasets import Dataset
@@ -149,10 +156,16 @@ def main(args):
                 try:
                     from datasets import load_dataset as hf_load_dataset
                     print("Attempting to load as arrow files...")
+                    
+                    # Manually finding the arrow file
+                    train_arrow = [f for f in os.listdir(train_path) if f.endswith('.arrow')][0]
+                    test_arrow = [f for f in os.listdir(test_path) if f.endswith('.arrow')][0]
+                    
                     data_files = {
-                        "train": os.path.join(train_path, "data-00000-of-00001.arrow"),
-                        "test": os.path.join(test_path, "data-00000-of-00001.arrow")
+                        "train": os.path.join(train_path, train_arrow),
+                        "test": os.path.join(test_path, test_arrow)
                     }
+                    print(f"Loading arrow files: {data_files}")
                     raw_dataset = hf_load_dataset("arrow", data_files=data_files)
                     print("Arrow file loading successful!")
                 except Exception as e3:
