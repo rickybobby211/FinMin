@@ -226,8 +226,8 @@ def main(args):
         ]
     )
     
-    if torch.__version__ >= "2" and sys.platform != "win32":
-        model = torch.compile(model)
+    # if torch.__version__ >= "2" and sys.platform != "win32":
+    #    model = torch.compile(model)
     
     torch.cuda.empty_cache()
     trainer.train()
@@ -264,6 +264,8 @@ if __name__ == "__main__":
     
     # WANDB_API_KEY should be set as environment variable:
     # export WANDB_API_KEY=your_api_key_here
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    
     wandb_api_key = os.environ.get('WANDB_API_KEY')
     if wandb_api_key:
         wandb.login(key=wandb_api_key)
