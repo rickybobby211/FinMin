@@ -21,6 +21,28 @@ load_dotenv()
 DEFAULT_RUNPOD_API_ID = os.environ.get("RUNPOD_API_ID", "YOUR_ENDPOINT_ID_HERE")
 DEFAULT_API_KEY = os.environ.get("RUNPOD_API_KEY", "YOUR_RUNPOD_API_KEY_HERE")
 
+def _download_with_stooq(ticker, start_date, end_date):
+    try:
+        from pandas_datareader import data as pdr
+    except Exception:
+        print("pandas_datareader not installed. Run: pip install pandas_datareader")
+        return None
+
+    candidates = [ticker]
+    if "." not in ticker:
+        candidates.append(f"{ticker}.US")
+
+    for symbol in candidates:
+        try:
+            df = pdr.DataReader(symbol, "stooq", start_date, end_date)
+            if df is None or len(df) == 0:
+                continue
+            return df.sort_index()
+        except Exception as e:
+            print(f"Stooq fetch failed for {symbol}: {e}")
+
+    return None
+
 def get_actual_movement(ticker, start_date, end_date):
     """
     Fetch actual stock movement from yfinance for verification.
@@ -30,10 +52,22 @@ def get_actual_movement(ticker, start_date, end_date):
         end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=3)
         end_str = end_dt.strftime("%Y-%m-%d")
         
-        data = yf.download(ticker, start=start_date, end=end_str, progress=False)
-        
-        if len(data) == 0:
-            return None, None, None
+        data = None
+        if os.environ.get("USE_STOOQ_ONLY") != "1":
+            data = yf.download(
+                ticker,
+                start=start_date,
+                end=end_str,
+                progress=False,
+                auto_adjust=False,
+            )
+
+        if data is None or not isinstance(data, pd.DataFrame) or len(data) == 0:
+            data = _download_with_stooq(ticker, start_date, end_str)
+
+        if data is None or not isinstance(data, pd.DataFrame) or len(data) == 0:
+            print("Error: no price data returned by yfinance or stooq")
+            return None, None, None, None
 
         # Get close price closest to start_date
         # Handle potential MultiIndex columns from yfinance
@@ -48,7 +82,7 @@ def get_actual_movement(ticker, start_date, end_date):
                     close_data = close_data.iloc[:, 0]
         except KeyError:
              print("Error: 'Close' column not found in data")
-             return None, None, None
+             return None, None, None, None
 
         start_price = close_data.iloc[0]
         
@@ -65,7 +99,7 @@ def get_actual_movement(ticker, start_date, end_date):
         
         if len(week_data) < 2:
             # If not enough data points in the exact week, try taking next available
-            return None, None, None
+            return None, None, None, None
             
         week_start_price = float(week_data.iloc[0])
         week_end_price = float(week_data.iloc[-1])
@@ -178,22 +212,21 @@ def parse_prediction(text):
     
     # Strategy 1: Look for explicit "Prediction" keyword (case insensitive)
     # We find all occurrences and check the context immediately following them.
-    # We prioritize the LAST occurrence as it usually contains the final verdict.
+    # We prioritize the FIRST occurrence now that prediction is at the top.
     # REQUIRE a colon to avoid matching "prediction" in the instructions (e.g. "make your prediction of...")
     matches = list(re.finditer(r"prediction[\*\s]*:", text_lower))
     
     if matches:
-        # Check the last occurrence first
-        last_match = matches[-1]
-        start_idx = last_match.end()
-        # Look at the next 300 chars to find the direction word
-        search_window = text_lower[start_idx : start_idx + 300]
-        
-        # Search for direction words (prioritize longer matches like 'increase' over 'up')
-        found = re.search(direction_pattern, search_window)
-        if found:
-            word = found.group(1)
-            return synonyms[word]
+        for match in matches:
+            start_idx = match.end()
+            # Look at the next 300 chars to find the direction word
+            search_window = text_lower[start_idx : start_idx + 300]
+            
+            # Search for direction words (prioritize longer matches like 'increase' over 'up')
+            found = re.search(direction_pattern, search_window)
+            if found:
+                word = found.group(1)
+                return synonyms[word]
 
     # Strategy 2: Last Resort - Look for direction in the last 200 characters of the entire text
     # DISABLED: Too risky if the model echoes the prompt (which contains "Positive" or "Come up with")
@@ -276,7 +309,9 @@ def main():
         has_news = "[Headline]:" in full_prompt
         news_status = "" if has_news else " (NO NEWS)"
             
-        print(f" Pred: {predicted_dir} | Act: {actual_dir} ({pct_change:.2f}%) {mark}{news_status}")
+        actual_display = actual_dir if actual_dir is not None else "UNKNOWN"
+        pct_display = f"{pct_change:.2f}%" if pct_change is not None else "N/A"
+        print(f" Pred: {predicted_dir} | Act: {actual_display} ({pct_display}) {mark}{news_status}")
         
         results.append({
             "date": test_date,

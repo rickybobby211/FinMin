@@ -47,50 +47,53 @@ class GenerationEvalCallback(TrainerCallback):
             return
             
         if state.is_local_process_zero:
-            model = kwargs['model']
-            tokenizer = self.tokenizer
-            generated_texts, reference_texts = [], []
+            try:
+                model = kwargs['model']
+                tokenizer = self.tokenizer
+                generated_texts, reference_texts = [], []
 
-            for feature in tqdm(self.eval_dataset):
-                prompt = feature['prompt']
-                gt = feature['answer']
-                inputs = tokenizer(
-                    prompt, return_tensors='pt',
-                    padding=False, max_length=self.max_length
-                )
-                inputs = {key: value.to(model.device) for key, value in inputs.items()}
-                
-                res = model.generate(
-                    **inputs, 
-                    use_cache=True,
-                    max_new_tokens=512
-                )
-                # Decode with special tokens kept to parse ChatML when needed
-                full_output = tokenizer.decode(res[0], skip_special_tokens=False)
-                if self.is_qwen:
-                    if "<|im_start|>assistant" in full_output:
-                        answer = full_output.split("<|im_start|>assistant")[-1]
-                        answer = answer.replace("<|im_end|>", "").strip()
+                for feature in tqdm(self.eval_dataset):
+                    prompt = feature['prompt']
+                    gt = feature['answer']
+                    inputs = tokenizer(
+                        prompt, return_tensors='pt',
+                        padding=False, max_length=self.max_length
+                    )
+                    inputs = {key: value.to(model.device) for key, value in inputs.items()}
+                    
+                    res = model.generate(
+                        **inputs, 
+                        use_cache=True,
+                        max_new_tokens=512
+                    )
+                    # Decode with special tokens kept to parse ChatML when needed
+                    full_output = tokenizer.decode(res[0], skip_special_tokens=False)
+                    if self.is_qwen:
+                        if "<|im_start|>assistant" in full_output:
+                            answer = full_output.split("<|im_start|>assistant")[-1]
+                            answer = answer.replace("<|im_end|>", "").strip()
+                        else:
+                            answer = full_output.strip()
                     else:
-                        answer = full_output.strip()
-                else:
-                    output = tokenizer.decode(res[0], skip_special_tokens=True)
-                    answer = re.sub(r'.*\\[/INST\\]\\s*', '', output, flags=re.DOTALL)
+                        output = tokenizer.decode(res[0], skip_special_tokens=True)
+                        answer = re.sub(r'.*\\[/INST\\]\\s*', '', output, flags=re.DOTALL)
 
-                generated_texts.append(answer)
-                reference_texts.append(gt)
+                    generated_texts.append(answer)
+                    reference_texts.append(gt)
 
-                # print("GENERATED: ", answer)
-                # print("REFERENCE: ", gt)
+                    # print("GENERATED: ", answer)
+                    # print("REFERENCE: ", gt)
 
-            metrics = calc_metrics(reference_texts, generated_texts)
-            
-            # Ensure wandb is initialized
-            if wandb.run is None:
-                wandb.init()
+                metrics = calc_metrics(reference_texts, generated_texts)
                 
-            wandb.log(metrics, step=state.global_step)
-            torch.cuda.empty_cache()            
+                # Ensure wandb is initialized
+                if wandb.run is None:
+                    wandb.init()
+                    
+                wandb.log(metrics, step=state.global_step)
+            finally:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
 
 def main(args):
@@ -101,7 +104,8 @@ def main(args):
     model = load_model(
         model_name, 
         load_in_4bit=args.load_in_4bit,
-        trust_remote_code=True
+        trust_remote_code=True,
+        attn_implementation=args.attn_implementation
     )
 
     if args.local_rank == 0:
@@ -261,6 +265,12 @@ if __name__ == "__main__":
     parser.add_argument("--eval_steps", default=0.1, type=float)    
     parser.add_argument("--from_remote", default=False, type=bool)
     parser.add_argument("--load_in_4bit", action='store_true', help="Load model in 4-bit precision")    
+    parser.add_argument(
+        "--attn_implementation",
+        default="flash_attention_2",
+        type=str,
+        help="Attention backend (e.g., flash_attention_2, sdpa, eager)"
+    )
     args = parser.parse_args()
     
     # WANDB_API_KEY should be set as environment variable:

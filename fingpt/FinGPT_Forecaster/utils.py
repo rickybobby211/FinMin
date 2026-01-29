@@ -22,7 +22,13 @@ lora_module_dict = {
 }
 
 
-def load_model(model_name, load_in_4bit=False, trust_remote_code=True):
+def load_model(
+    model_name,
+    load_in_4bit=False,
+    trust_remote_code=True,
+    attn_implementation="flash_attention_2",
+    torch_dtype=torch.bfloat16,
+):
     """
     Factory function to load models with optional quantization.
     """
@@ -39,6 +45,8 @@ def load_model(model_name, load_in_4bit=False, trust_remote_code=True):
         model_name,
         quantization_config=quantization_config,
         trust_remote_code=trust_remote_code,
+        attn_implementation=attn_implementation,
+        torch_dtype=torch_dtype,
         device_map="auto" if load_in_4bit else None
     )
     return model

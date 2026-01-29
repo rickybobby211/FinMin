@@ -34,7 +34,7 @@ RUN pip install --upgrade pip && \
 
 # Install other dependencies
 RUN pip install \
-    transformers>=4.40.0 \
+    "transformers>=4.40.0,<5.0.0" \
     peft \
     accelerate \
     pandas \
