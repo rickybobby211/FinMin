@@ -2,7 +2,9 @@ import streamlit as st
 import requests
 import json
 import time
+import csv
 from datetime import date
+from pathlib import Path
 
 # ============================================================================
 # CONFIGURATION
@@ -11,6 +13,7 @@ from datetime import date
 # RunPod Configuration
 RUNPOD_API_ID = "4fbwlg7yhbwu2u"  # TODO: Replace with your new Endpoint ID
 BASE_URL = f"https://api.runpod.ai/v2/{RUNPOD_API_ID}"
+RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 # Try to get API KEY from Streamlit secrets, environment variable, or fallback
 try:
@@ -107,25 +110,71 @@ def run_prediction(payload, headers):
             progress_bar.progress(prog)
 
 
+# Simple Builder + Command pattern to support batch predictions.
+class PredictionPayloadBuilder:
+    def __init__(self, prediction_date, n_weeks, use_basics):
+        self.prediction_date = prediction_date
+        self.n_weeks = n_weeks
+        self.use_basics = use_basics
+
+    def build(self, ticker):
+        return {
+            "input": {
+                "ticker": ticker,
+                "date": self.prediction_date.strftime("%Y-%m-%d"),
+                "n_weeks": self.n_weeks,
+                "use_basics": self.use_basics,
+            }
+        }
+
+
+class PredictionJob:
+    def __init__(self, ticker, payload_builder, headers):
+        self.ticker = ticker
+        self.payload_builder = payload_builder
+        self.headers = headers
+
+    def execute(self):
+        payload = self.payload_builder.build(self.ticker)
+        return run_prediction(payload, self.headers)
+
+
+class PredictionResultRepository:
+    def __init__(self, base_dir):
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    def append(self, prediction_date, ticker, prediction_text):
+        file_path = self.base_dir / f"predictions_{prediction_date}.csv"
+        is_new_file = not file_path.exists()
+
+        with file_path.open("a", newline="", encoding="utf-8") as file_handle:
+            writer = csv.writer(file_handle)
+            if is_new_file:
+                writer.writerow(["prediction", "ticker", "date"])
+            writer.writerow([prediction_text, ticker, prediction_date])
+
+        return file_path
+
+
 def main():
     # Sidebar
     with st.sidebar:
         st.image("https://github.com/AI4Finance-Foundation/FinGPT/raw/master/figs/logo.png", width=100)
         st.title("FinGPT Forecaster")
         st.markdown("---")
-        
-        # Dow 30 Tickers
-        DOW_30 = [
-            "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW",
-            "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM",
-            "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"
+
+        # Trained tickers (Dow 30 subset used in this project)
+        TRAINED_TICKERS = [
+            "AAPL", "AMZN", "CRM", "CSCO", "GOOGL", "IBM",
+            "INTC", "META", "MSFT", "NVDA", "TSLA", "TSM"
         ]
-        
-        ticker = st.selectbox(
-            "Select Ticker (Dow 30)",
-            options=DOW_30,
-            index=DOW_30.index("AAPL"), # Default to AAPL
-            help="Select a company from the Dow Jones Industrial Average."
+
+        tickers = st.multiselect(
+            "Select Tickers (Trained Dow 30)",
+            options=TRAINED_TICKERS,
+            default=["AAPL"],
+            help="Select one or more tickers for the chosen prediction date."
         )
         
         prediction_date = st.date_input(
@@ -170,53 +219,82 @@ def main():
     with col1:
         generate_btn = st.button("🚀 Generate Analysis", type="primary", use_container_width=True)
 
+    if "prediction_results" not in st.session_state:
+        st.session_state["prediction_results"] = []
+
     if generate_btn:
+        if not tickers:
+            st.warning("Please select at least one ticker.")
+            return
+
         with st.container():
-            # Prepare payload
-            payload = {
-                "input": {
-                    "ticker": ticker,
-                    "date": prediction_date.strftime("%Y-%m-%d"),
-                    "n_weeks": n_weeks,
-                    "use_basics": use_basics
-                }
-            }
-            
+            payload_builder = PredictionPayloadBuilder(prediction_date, n_weeks, use_basics)
+            result_repository = PredictionResultRepository(RESULTS_DIR)
             headers = {
                 "Authorization": f"Bearer {API_KEY}",
                 "Content-Type": "application/json"
             }
-            
-            result = run_prediction(payload, headers)
-            
-            if "error" in result:
-                st.error(f"❌ {result['error']}")
-                if "details" in result:
-                    st.json(result["details"])
-            else:
+
+            jobs = [PredictionJob(ticker, payload_builder, headers) for ticker in tickers]
+            st.session_state["prediction_results"] = []
+            prediction_date_str = prediction_date.strftime("%Y-%m-%d")
+            saved_path = None
+
+            for idx, job in enumerate(jobs):
+                if idx > 0:
+                    st.markdown("---")
+
+                result = job.execute()
+
+                if "error" in result:
+                    st.error(f"❌ {result['error']}")
+                    if "details" in result:
+                        st.json(result["details"])
+                    continue
+
                 output = result.get("output", result)
-                
+
                 # Check for internal error in output
                 if isinstance(output, dict) and "error" in output:
-                     st.error(f"❌ Model Error: {output['error']}")
-                     return
-                
-                # Display Results
-                st.markdown("---")
-                
-                raw_text = output.get('prediction', 'No prediction text returned.')
-                
-                st.subheader(f"📊 Analysis for {output.get('ticker', ticker)}")
-                st.caption(f"Target Week: {output.get('date', prediction_date)}")
-                
-                st.markdown(f"""
-                <div class="prediction-box">
-                    {raw_text.replace(chr(10), '<br>')}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                with st.expander("View Raw API Response"):
-                    st.json(result)
+                    st.error(f"❌ Model Error: {output['error']}")
+                    continue
+
+                raw_text = output.get("prediction", "No prediction text returned.")
+                resolved_ticker = output.get("ticker", job.ticker)
+                resolved_date = output.get("date", prediction_date_str)
+
+                st.session_state["prediction_results"].append({
+                    "ticker": resolved_ticker,
+                    "date": resolved_date,
+                    "prediction": raw_text,
+                    "raw_result": result
+                })
+
+                saved_path = result_repository.append(
+                    prediction_date=resolved_date,
+                    ticker=resolved_ticker,
+                    prediction_text=raw_text
+                )
+
+            if saved_path and st.session_state["prediction_results"]:
+                st.success(f"Saved {len(st.session_state['prediction_results'])} predictions to {saved_path}")
+
+    if st.session_state["prediction_results"]:
+        st.markdown("---")
+        st.subheader("📌 Latest Predictions")
+
+        for item in st.session_state["prediction_results"]:
+            st.subheader(f"📊 Analysis for {item['ticker']}")
+            st.caption(f"Target Week: {item['date']}")
+
+            st.markdown(f"""
+            <div class="prediction-box">
+                {item['prediction'].replace(chr(10), '<br>')}
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.expander("View Raw API Response"):
+                st.json(item["raw_result"])
 
 if __name__ == "__main__":
     main()
