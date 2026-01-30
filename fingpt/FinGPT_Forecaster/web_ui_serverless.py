@@ -3,6 +3,7 @@ import requests
 import json
 import time
 import csv
+import io
 from datetime import date
 from pathlib import Path
 
@@ -148,13 +149,15 @@ class PredictionResultRepository:
         file_path = self.base_dir / f"predictions_{prediction_date}.csv"
         is_new_file = not file_path.exists()
 
-        with file_path.open("a", newline="", encoding="utf-8") as file_handle:
-            writer = csv.writer(file_handle)
-            if is_new_file:
-                writer.writerow(["prediction", "ticker", "date"])
-            writer.writerow([prediction_text, ticker, prediction_date])
-
-        return file_path
+        try:
+            with file_path.open("a", newline="", encoding="utf-8") as file_handle:
+                writer = csv.writer(file_handle)
+                if is_new_file:
+                    writer.writerow(["prediction", "ticker", "date"])
+                writer.writerow([prediction_text, ticker, prediction_date])
+            return file_path, None
+        except OSError as exc:
+            return file_path, str(exc)
 
 
 def main():
@@ -239,6 +242,7 @@ def main():
             st.session_state["prediction_results"] = []
             prediction_date_str = prediction_date.strftime("%Y-%m-%d")
             saved_path = None
+            save_error = None
 
             for idx, job in enumerate(jobs):
                 if idx > 0:
@@ -270,20 +274,27 @@ def main():
                     "raw_result": result
                 })
 
-                saved_path = result_repository.append(
+                saved_path, save_error = result_repository.append(
                     prediction_date=resolved_date,
                     ticker=resolved_ticker,
                     prediction_text=raw_text
                 )
 
-            if saved_path and st.session_state["prediction_results"]:
+            if save_error:
+                st.warning(f"Could not save results to disk: {save_error}")
+            elif saved_path and st.session_state["prediction_results"]:
                 st.success(f"Saved {len(st.session_state['prediction_results'])} predictions to {saved_path}")
 
     if st.session_state["prediction_results"]:
         st.markdown("---")
         st.subheader("📌 Latest Predictions")
 
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
+        csv_writer.writerow(["prediction", "ticker", "date"])
+
         for item in st.session_state["prediction_results"]:
+            csv_writer.writerow([item["prediction"], item["ticker"], item["date"]])
             st.subheader(f"📊 Analysis for {item['ticker']}")
             st.caption(f"Target Week: {item['date']}")
 
@@ -295,6 +306,13 @@ def main():
 
             with st.expander("View Raw API Response"):
                 st.json(item["raw_result"])
+
+        st.download_button(
+            label="Download predictions CSV",
+            data=csv_buffer.getvalue(),
+            file_name=f"predictions_{st.session_state['prediction_results'][0]['date']}.csv",
+            mime="text/csv"
+        )
 
 if __name__ == "__main__":
     main()
