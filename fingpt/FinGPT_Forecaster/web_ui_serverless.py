@@ -160,6 +160,51 @@ class PredictionResultRepository:
             return file_path, str(exc)
 
 
+class RetryPolicy:
+    def __init__(self, max_attempts=2, backoff_seconds=4):
+        self.max_attempts = max_attempts
+        self.backoff_seconds = backoff_seconds
+
+    def should_retry(self, error_message, attempt_index):
+        if attempt_index >= self.max_attempts - 1:
+            return False
+        if not error_message:
+            return False
+        retryable_tokens = (
+            "Failed to start job",
+            "Timeout waiting for prediction",
+            "Network error",
+        )
+        return any(token in error_message for token in retryable_tokens)
+
+    def wait(self, attempt_index):
+        time.sleep(self.backoff_seconds * (attempt_index + 1))
+
+
+class PredictionJobRunner:
+    def __init__(self, retry_policy):
+        self.retry_policy = retry_policy
+
+    def run(self, job):
+        for attempt_index in range(self.retry_policy.max_attempts):
+            try:
+                result = job.execute()
+            except requests.RequestException as exc:
+                result = {"error": f"Network error: {exc}"}
+            except Exception as exc:
+                result = {"error": f"Unexpected error: {exc}"}
+
+            if "error" not in result:
+                return result
+
+            if not self.retry_policy.should_retry(result.get("error"), attempt_index):
+                return result
+
+            self.retry_policy.wait(attempt_index)
+
+        return {"error": "Retry policy exhausted without result"}
+
+
 def main():
     # Sidebar
     with st.sidebar:
@@ -224,6 +269,8 @@ def main():
 
     if "prediction_results" not in st.session_state:
         st.session_state["prediction_results"] = []
+    if "prediction_errors" not in st.session_state:
+        st.session_state["prediction_errors"] = []
 
     if generate_btn:
         if not tickers:
@@ -233,6 +280,7 @@ def main():
         with st.container():
             payload_builder = PredictionPayloadBuilder(prediction_date, n_weeks, use_basics)
             result_repository = PredictionResultRepository(RESULTS_DIR)
+            job_runner = PredictionJobRunner(RetryPolicy())
             headers = {
                 "Authorization": f"Bearer {API_KEY}",
                 "Content-Type": "application/json"
@@ -240,18 +288,28 @@ def main():
 
             jobs = [PredictionJob(ticker, payload_builder, headers) for ticker in tickers]
             st.session_state["prediction_results"] = []
+            st.session_state["prediction_errors"] = []
             prediction_date_str = prediction_date.strftime("%Y-%m-%d")
             saved_path = None
             save_error = None
+            overall_progress = st.progress(0)
+            overall_status = st.empty()
 
             for idx, job in enumerate(jobs):
                 if idx > 0:
                     st.markdown("---")
 
-                result = job.execute()
+                overall_status.text(f"Running {idx + 1}/{len(jobs)}: {job.ticker}")
+                result = job_runner.run(job)
+                overall_progress.progress(int(((idx + 1) / len(jobs)) * 100))
 
                 if "error" in result:
-                    st.error(f"❌ {result['error']}")
+                    error_message = result["error"]
+                    st.session_state["prediction_errors"].append({
+                        "ticker": job.ticker,
+                        "error": error_message,
+                    })
+                    st.error(f"❌ {job.ticker}: {error_message}")
                     if "details" in result:
                         st.json(result["details"])
                     continue
@@ -284,6 +342,12 @@ def main():
                 st.warning(f"Could not save results to disk: {save_error}")
             elif saved_path and st.session_state["prediction_results"]:
                 st.success(f"Saved {len(st.session_state['prediction_results'])} predictions to {saved_path}")
+
+    if st.session_state["prediction_errors"]:
+        st.markdown("---")
+        st.subheader("⚠️ Failed Tickers")
+        for error_item in st.session_state["prediction_errors"]:
+            st.write(f"{error_item['ticker']}: {error_item['error']}")
 
     if st.session_state["prediction_results"]:
         st.markdown("---")
