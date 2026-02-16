@@ -235,6 +235,9 @@ class PriceDataProvider:
     def get_close_on_or_before(self, ticker: str, target_date: date) -> float | None:
         raise NotImplementedError
 
+    def get_latest_price(self, ticker: str) -> float | None:
+        raise NotImplementedError
+
 
 class YahooPriceDataProvider(PriceDataProvider):
     """Hämtar prisdata från Yahoo Finance via yfinance."""
@@ -277,6 +280,50 @@ class YahooPriceDataProvider(PriceDataProvider):
                 return None
             return float(close_value.iloc[0])
         return float(close_value)
+
+    def get_latest_price(self, ticker: str) -> float | None:
+        """
+        Hämtar senaste marknadspris (intraday när börsen är öppen).
+        Fallbackar till senaste tillgängliga close om livepris inte finns.
+        """
+        try:
+            ticker_obj = yf.Ticker(ticker)
+        except Exception:
+            return None
+
+        # 1) Försök snabb live-källa först.
+        fast_info = getattr(ticker_obj, "fast_info", None)
+        if fast_info is not None:
+            for key in ("lastPrice", "regularMarketPrice"):
+                value = self._read_value(fast_info, key)
+                if value is not None:
+                    return self._to_float(value)
+
+        # 2) Fallback till senaste 1m-bar.
+        try:
+            intraday = ticker_obj.history(period="1d", interval="1m")
+            if not intraday.empty and "Close" in intraday:
+                latest_close = intraday["Close"].dropna()
+                if not latest_close.empty:
+                    return self._to_float(latest_close.iloc[-1])
+        except Exception:
+            pass
+
+        # 3) Slutlig fallback till senaste tillgängliga close.
+        return self.get_close_on_or_before(ticker, date.today())
+
+    def _read_value(self, source, key: str):
+        if hasattr(source, "get"):
+            try:
+                value = source.get(key)
+                if value is not None:
+                    return value
+            except Exception:
+                pass
+        try:
+            return source[key]
+        except Exception:
+            return None
 
 
 @dataclass
@@ -658,10 +705,16 @@ class PriceComparisonService:
         self, tickers: list[str], date_a: date, date_b: date
     ) -> list[PriceComparisonResult]:
         results: list[PriceComparisonResult] = []
+        use_live_price_for_date_b = date_b >= date.today()
 
         for ticker in tickers:
             price_a = self.provider.get_close_on_or_before(ticker, date_a)
-            price_b = self.provider.get_close_on_or_before(ticker, date_b)
+            if use_live_price_for_date_b:
+                price_b = self.provider.get_latest_price(ticker)
+                if price_b is None:
+                    price_b = self.provider.get_close_on_or_before(ticker, date_b)
+            else:
+                price_b = self.provider.get_close_on_or_before(ticker, date_b)
 
             if price_a is None or price_b is None:
                 abs_change = None
