@@ -38,7 +38,8 @@ MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
 ADAPTER_ID = os.environ.get("ADAPTER_PATH", "rickson21/qwen2.5-32b-finmin-v1")
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "32768"))
 MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "512"))
-DEFAULT_TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.7"))
+DEFAULT_TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.2"))
+print(f"--- GENERATION: Using temperature={DEFAULT_TEMPERATURE}", flush=True)
 ANSWER_START_MARKER = "### ANSWER START"
 INCLUDE_PROMPT_IN_RESPONSE = os.environ.get("INCLUDE_PROMPT_IN_RESPONSE", "0")
 TECH_STOCKS = {"AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"}
