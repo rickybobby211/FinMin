@@ -241,8 +241,8 @@ class YahooPriceDataProvider(PriceDataProvider):
 
     def get_close_on_or_before(self, ticker: str, target_date: date) -> float | None:
         # Hämta ett litet fönster runt dagen för att hantera helger/helgdagar.
-        start = target_date - timedelta(days=7)
-        end = target_date + timedelta(days=1)
+        start = target_date - timedelta(days=10)
+        end = target_date + timedelta(days=2)
 
         try:
             data = yf.download(
@@ -257,19 +257,26 @@ class YahooPriceDataProvider(PriceDataProvider):
         if data.empty or "Close" not in data:
             return None
 
-        # Filtrera på dagar <= target_date och ta senaste stängningspris.
+        # Försök alltid träffa exakt datum först. Fallback: senaste <= target_date.
         closes = data["Close"]
+        exact_mask = closes.index.date == target_date
+        if exact_mask.any():
+            exact_close = closes[exact_mask].iloc[-1]
+            return self._to_float(exact_close)
+
         closes = closes[closes.index.date <= target_date]
         if closes.empty:
             return None
 
-        last_close = closes.iloc[-1]
-        # yfinance kan returnera en single-column DataFrame/Series i "Close".
-        if hasattr(last_close, "iloc"):
-            if len(last_close) == 0:
+        return self._to_float(closes.iloc[-1])
+
+    def _to_float(self, close_value) -> float | None:
+        # yfinance kan returnera scalar, Series eller single-column DataFrame-värde.
+        if hasattr(close_value, "iloc"):
+            if len(close_value) == 0:
                 return None
-            return float(last_close.iloc[0])
-        return float(last_close)
+            return float(close_value.iloc[0])
+        return float(close_value)
 
 
 @dataclass
@@ -298,7 +305,8 @@ class PredictionCsvParser:
     """Parsar predictions-CSV från parse_prediction.py."""
 
     REQUIRED_BASE_COLUMNS = {"ticker", "date"}
-    MOVE_ALIASES = ("move", "prediction", "prediktion")
+    MOVE_ALIASES = ("move",)
+    PREDICTION_ALIASES = ("prediction", "prediktion")
     TICKER_ALIASES = ("ticker", "symbol")
     DATE_ALIASES = ("date", "target_week", "target week")
     CONFIDENCE_ALIASES = ("confidence", "confidence level")
@@ -375,7 +383,8 @@ class PredictionCsvParser:
             last_detected_columns = ", ".join(sorted(normalized_columns)) or "(inga)"
             has_required_base = self.REQUIRED_BASE_COLUMNS.issubset(normalized_columns)
             has_move_or_prediction = any(
-                alias in normalized_columns for alias in self.MOVE_ALIASES
+                alias in normalized_columns
+                for alias in self.MOVE_ALIASES + self.PREDICTION_ALIASES
             )
             self.last_debug_info["attempts"].append(
                 {
@@ -429,17 +438,24 @@ class PredictionCsvParser:
             ticker = self._first_value(normalized_row, self.TICKER_ALIASES).upper()
             pred_date = self._first_value(normalized_row, self.DATE_ALIASES)
             raw_move = self._first_value(normalized_row, self.MOVE_ALIASES)
+            raw_prediction_text = self._first_value(
+                normalized_row, self.PREDICTION_ALIASES
+            )
             confidence = self._first_value(normalized_row, self.CONFIDENCE_ALIASES)
             text = self._first_value(normalized_row, self.TEXT_ALIASES)
 
             if not ticker:
                 continue
 
-            move = self._extract_compact_move(raw_move)
+            # Om "move" finns i CSV (parse_prediction.py), använd den direkt.
+            move = self._normalize_move_value(raw_move) if raw_move else ""
+            # Fallback för äldre CSV med endast "prediction"-kolumn.
+            if not move and raw_prediction_text:
+                move = self._extract_compact_move(raw_prediction_text)
             if not move and text:
                 move = self._extract_compact_move(text)
 
-            direction = self._extract_direction(move or raw_move)
+            direction = self._extract_direction(move or raw_prediction_text or raw_move)
             if direction is None and text:
                 direction = self._extract_direction(text)
 
@@ -447,7 +463,7 @@ class PredictionCsvParser:
                 move = direction
 
             expected_pct_change = self._extract_expected_pct_change(
-                move or raw_move,
+                move or raw_move or raw_prediction_text,
                 direction,
             )
             records.append(
@@ -549,6 +565,28 @@ class PredictionCsvParser:
 
         direction = self._extract_direction(normalized)
         return direction or ""
+
+    def _normalize_move_value(self, raw_move: str) -> str:
+        normalized = " ".join(raw_move.strip().split())
+        if not normalized:
+            return ""
+
+        move_with_pct = re.search(
+            r"\b(up|down|flat|sideways)\b\s*(?:by\s*"
+            r"(-?\d+(?:[.,]\d+)?(?:\s*-\s*-?\d+(?:[.,]\d+)?)?)\s*%)?$",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if move_with_pct:
+            direction_token = move_with_pct.group(1).lower()
+            pct_token = move_with_pct.group(2)
+            direction = "FLAT" if direction_token == "sideways" else direction_token.upper()
+            if pct_token:
+                return f"{direction} by {pct_token.replace(',', '.')}%"
+            return direction
+
+        compact = self._extract_compact_move(normalized)
+        return compact or normalized
 
     def _extract_expected_pct_change(
         self, move_text: str, direction: str | None
