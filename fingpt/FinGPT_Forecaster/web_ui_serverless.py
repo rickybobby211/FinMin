@@ -582,7 +582,25 @@ def render_price_comparison_section():
             }
         )
 
-    st.table(table_rows)
+    try:
+        import pandas as pd
+
+        dataframe = pd.DataFrame(table_rows)
+
+        def highlight_direction_match(value):
+            if value == "Ja":
+                return "background-color: #d4edda; color: #155724; font-weight: 600;"
+            if value == "Nej":
+                return "background-color: #f8d7da; color: #721c24; font-weight: 600;"
+            return "background-color: #f1f3f5; color: #6c757d;"
+
+        styled_dataframe = dataframe.style.applymap(
+            highlight_direction_match,
+            subset=["Rätt Riktning"],
+        )
+        st.table(styled_dataframe)
+    except Exception:
+        st.table(table_rows)
 
 
 def main():
