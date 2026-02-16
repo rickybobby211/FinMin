@@ -4,6 +4,7 @@ import json
 import time
 import csv
 import io
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -276,6 +277,158 @@ class PriceComparisonResult:
     pct_change: float | None
 
 
+@dataclass
+class UploadedPrediction:
+    ticker: str
+    date: str
+    move: str
+    confidence: str
+    text: str
+    direction: str | None
+    expected_pct_change: float | None
+
+
+class PredictionCsvParser:
+    """Parsar predictions-CSV från parse_prediction.py."""
+
+    REQUIRED_COLUMNS = {"ticker", "date", "move"}
+
+    def parse(self, uploaded_file) -> tuple[list[UploadedPrediction], str | None]:
+        if uploaded_file is None:
+            return [], None
+
+        try:
+            raw_text = uploaded_file.getvalue().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return [], "Kunde inte läsa filen. Kontrollera att CSV-filen är UTF-8-kodad."
+
+        if not raw_text.strip():
+            return [], "CSV-filen är tom."
+
+        try:
+            sample = raw_text[:2048]
+            delimiter = csv.Sniffer().sniff(sample, delimiters=";,").delimiter
+        except csv.Error:
+            # parse_prediction.py skriver semikolon, men vi tillater komma som fallback.
+            delimiter = ";"
+
+        reader = csv.DictReader(io.StringIO(raw_text), delimiter=delimiter)
+        if not reader.fieldnames:
+            return [], "CSV-filen saknar header."
+
+        normalized_columns = {col.strip().lower() for col in reader.fieldnames}
+        if not self.REQUIRED_COLUMNS.issubset(normalized_columns):
+            return [], (
+                "CSV-filen saknar obligatoriska kolumner. "
+                "Förväntat minst: ticker, date, move."
+            )
+
+        records: list[UploadedPrediction] = []
+        for row in reader:
+            ticker = (row.get("ticker") or row.get("Ticker") or "").strip().upper()
+            pred_date = (row.get("date") or row.get("Date") or "").strip()
+            move = (row.get("move") or row.get("Move") or "").strip()
+            confidence = (row.get("confidence") or row.get("Confidence") or "").strip()
+            text = (row.get("text") or row.get("Text") or "").strip()
+
+            if not ticker:
+                continue
+
+            direction = self._extract_direction(move)
+            expected_pct_change = self._extract_expected_pct_change(move, direction)
+            records.append(
+                UploadedPrediction(
+                    ticker=ticker,
+                    date=pred_date,
+                    move=move,
+                    confidence=confidence,
+                    text=text,
+                    direction=direction,
+                    expected_pct_change=expected_pct_change,
+                )
+            )
+
+        if not records:
+            return [], "Inga giltiga predictions hittades i CSV-filen."
+
+        return records, None
+
+    def _extract_direction(self, move_text: str) -> str | None:
+        normalized = move_text.lower().strip()
+        if not normalized:
+            return None
+
+        if any(token in normalized for token in ("up", "bullish", "increase", "higher")):
+            return "UP"
+        if any(
+            token in normalized
+            for token in ("down", "bearish", "decrease", "lower", "drop")
+        ):
+            return "DOWN"
+        if "flat" in normalized or "sideways" in normalized:
+            return "FLAT"
+        return None
+
+    def _extract_expected_pct_change(
+        self, move_text: str, direction: str | None
+    ) -> float | None:
+        # Hanterar både "2%" och intervall som "1-2%".
+        normalized = move_text.lower().replace(",", ".")
+        range_match = re.search(r"(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)\s*%", normalized)
+        if range_match:
+            value = (float(range_match.group(1)) + float(range_match.group(2))) / 2
+        else:
+            single_match = re.search(r"(-?\d+(?:\.\d+)?)\s*%", normalized)
+            value = float(single_match.group(1)) if single_match else None
+
+        if value is None:
+            return 0.0 if direction == "FLAT" else None
+
+        if direction == "DOWN":
+            return -abs(value)
+        if direction == "UP":
+            return abs(value)
+        if direction == "FLAT":
+            return 0.0
+        return value
+
+
+class PredictionComparisonService:
+    """Kopplar faktiska prisresultat till uppladdade predictions."""
+
+    def build_prediction_index(
+        self, uploaded_predictions: list[UploadedPrediction]
+    ) -> dict[str, UploadedPrediction]:
+        index: dict[str, UploadedPrediction] = {}
+        for prediction in uploaded_predictions:
+            # Senaste raden per ticker vinner om dubbletter finns.
+            index[prediction.ticker] = prediction
+        return index
+
+    def resolve_actual_direction(self, pct_change: float | None) -> str | None:
+        if pct_change is None:
+            return None
+        if pct_change > 0:
+            return "UP"
+        if pct_change < 0:
+            return "DOWN"
+        return "FLAT"
+
+    def direction_match(
+        self, predicted_direction: str | None, actual_direction: str | None
+    ) -> str:
+        if predicted_direction is None or actual_direction is None:
+            return "-"
+        return "Ja" if predicted_direction == actual_direction else "Nej"
+
+    def pct_gap(
+        self, expected_pct_change: float | None, actual_pct_change: float | None
+    ) -> str:
+        if expected_pct_change is None or actual_pct_change is None:
+            return "-"
+        return f"{abs(actual_pct_change - expected_pct_change):.2f}%"
+
+
 class PriceComparisonService:
     """Applikationstjänst som jämför pris mellan två datum."""
 
@@ -342,6 +495,16 @@ def render_price_comparison_section():
             key="compare_date_b",
         )
 
+    uploaded_prediction_csv = st.file_uploader(
+        "Ladda upp predictions CSV (från parse_prediction.py)",
+        type=["csv"],
+        help=(
+            "CSV med kolumner som ticker, date, move, confidence, text. "
+            "Den används för att jämföra prediction mot faktisk kursrörelse."
+        ),
+        key="prediction_compare_upload",
+    )
+
     compare_btn = st.button(
         "📈 Hämta kursrörelse",
         type="primary",
@@ -370,12 +533,24 @@ def render_price_comparison_section():
         st.info("Hittade ingen kursdata för angivna inställningar.")
         return
 
+    parser = PredictionCsvParser()
+    prediction_rows, parse_error = parser.parse(uploaded_prediction_csv)
+    if parse_error:
+        st.warning(parse_error)
+
+    prediction_compare_service = PredictionComparisonService()
+    prediction_index = prediction_compare_service.build_prediction_index(prediction_rows)
+
     table_rows = []
     for r in results:
         if r.price_a is None or r.price_b is None:
             status = "Ingen data"
         else:
             status = ""
+
+        prediction_row = prediction_index.get(r.ticker)
+        actual_direction = prediction_compare_service.resolve_actual_direction(r.pct_change)
+        predicted_direction = prediction_row.direction if prediction_row else None
 
         table_rows.append(
             {
@@ -391,6 +566,19 @@ def render_price_comparison_section():
                     f"{r.pct_change:.2f}%" if r.pct_change is not None else "-"
                 ),
                 "Status": status,
+                "Prediction Datum": prediction_row.date if prediction_row else "-",
+                "Prediction Move": prediction_row.move if prediction_row else "-",
+                "Confidence": prediction_row.confidence if prediction_row else "-",
+                "Pred. Riktning": predicted_direction or "-",
+                "Faktisk Riktning": actual_direction or "-",
+                "Rätt Riktning": prediction_compare_service.direction_match(
+                    predicted_direction,
+                    actual_direction,
+                ),
+                "Avvikelse %": prediction_compare_service.pct_gap(
+                    prediction_row.expected_pct_change if prediction_row else None,
+                    r.pct_change,
+                ),
             }
         )
 
