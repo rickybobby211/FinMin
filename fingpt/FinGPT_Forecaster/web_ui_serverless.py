@@ -4,8 +4,10 @@ import json
 import time
 import csv
 import io
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
+import yfinance as yf
 
 # ============================================================================
 # CONFIGURATION
@@ -15,6 +17,22 @@ from pathlib import Path
 RUNPOD_API_ID = "4fbwlg7yhbwu2u"  # TODO: Replace with your new Endpoint ID
 BASE_URL = f"https://api.runpod.ai/v2/{RUNPOD_API_ID}"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+
+# Trained tickers (Dow 30 subset used in this project)
+TRAINED_TICKERS = [
+    "AAPL",
+    "AMZN",
+    "CRM",
+    "CSCO",
+    "GOOGL",
+    "IBM",
+    "INTC",
+    "META",
+    "MSFT",
+    "NVDA",
+    "TSLA",
+    "TSM",
+]
 
 # Try to get API KEY from Streamlit secrets, environment variable, or fallback
 try:
@@ -205,18 +223,186 @@ class PredictionJobRunner:
         return {"error": "Retry policy exhausted without result"}
 
 
+# ============================================================================
+# PRICE DATA (Strategy + Service pattern)
+# ============================================================================
+
+
+class PriceDataProvider:
+    """Abstrakt provider för prisdata (Strategy‑mönster)."""
+
+    def get_close_on_or_before(self, ticker: str, target_date: date) -> float | None:
+        raise NotImplementedError
+
+
+class YahooPriceDataProvider(PriceDataProvider):
+    """Hämtar prisdata från Yahoo Finance via yfinance."""
+
+    def get_close_on_or_before(self, ticker: str, target_date: date) -> float | None:
+        # Hämta ett litet fönster runt dagen för att hantera helger/helgdagar.
+        start = target_date - timedelta(days=7)
+        end = target_date + timedelta(days=1)
+
+        try:
+            data = yf.download(
+                ticker,
+                start=start.strftime("%Y-%m-%d"),
+                end=end.strftime("%Y-%m-%d"),
+                progress=False,
+            )
+        except Exception:
+            return None
+
+        if data.empty or "Close" not in data:
+            return None
+
+        # Filtrera på dagar <= target_date och ta senaste stängningspris.
+        closes = data["Close"]
+        closes = closes[closes.index.date <= target_date]
+        if closes.empty:
+            return None
+
+        return float(closes.iloc[-1])
+
+
+@dataclass
+class PriceComparisonResult:
+    ticker: str
+    date_a: date
+    date_b: date
+    price_a: float | None
+    price_b: float | None
+    abs_change: float | None
+    pct_change: float | None
+
+
+class PriceComparisonService:
+    """Applikationstjänst som jämför pris mellan två datum."""
+
+    def __init__(self, provider: PriceDataProvider):
+        self.provider = provider
+
+    def compare(
+        self, tickers: list[str], date_a: date, date_b: date
+    ) -> list[PriceComparisonResult]:
+        results: list[PriceComparisonResult] = []
+
+        for ticker in tickers:
+            price_a = self.provider.get_close_on_or_before(ticker, date_a)
+            price_b = self.provider.get_close_on_or_before(ticker, date_b)
+
+            if price_a is None or price_b is None:
+                abs_change = None
+                pct_change = None
+            else:
+                abs_change = price_b - price_a
+                pct_change = (abs_change / price_a) * 100 if price_a != 0 else None
+
+            results.append(
+                PriceComparisonResult(
+                    ticker=ticker,
+                    date_a=date_a,
+                    date_b=date_b,
+                    price_a=price_a,
+                    price_b=price_b,
+                    abs_change=abs_change,
+                    pct_change=pct_change,
+                )
+            )
+
+        return results
+
+
+def render_price_comparison_section():
+    """Streamlit‑vy för att jämföra kurs mellan två datum."""
+    st.markdown("---")
+    st.subheader("📊 Jämför kursrörelse mellan två datum")
+
+    selected_tickers = st.multiselect(
+        "Tickers att jämföra",
+        options=TRAINED_TICKERS,
+        default=["AAPL"],
+        help="Välj en eller flera tickers du vill jämföra.",
+        key="compare_tickers",
+    )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        date_a = st.date_input(
+            "Datum A",
+            value=date.today(),
+            help="Startdatum för jämförelsen.",
+            key="compare_date_a",
+        )
+    with col_b:
+        date_b = st.date_input(
+            "Datum B",
+            value=date.today(),
+            help="Slutdatum för jämförelsen.",
+            key="compare_date_b",
+        )
+
+    compare_btn = st.button(
+        "📈 Hämta kursrörelse",
+        type="primary",
+        use_container_width=True,
+        key="compare_button",
+    )
+
+    if not compare_btn:
+        return
+
+    if not selected_tickers:
+        st.warning("Välj minst en ticker för att göra jämförelsen.")
+        return
+
+    if date_b < date_a:
+        st.warning("Datum B måste vara samma som eller senare än datum A.")
+        return
+
+    provider = YahooPriceDataProvider()
+    service = PriceComparisonService(provider)
+
+    with st.spinner("Hämtar kursdata från Yahoo Finance..."):
+        results = service.compare(selected_tickers, date_a, date_b)
+
+    if not results:
+        st.info("Hittade ingen kursdata för angivna inställningar.")
+        return
+
+    table_rows = []
+    for r in results:
+        if r.price_a is None or r.price_b is None:
+            status = "Ingen data"
+        else:
+            status = ""
+
+        table_rows.append(
+            {
+                "Ticker": r.ticker,
+                "Datum A": r.date_a.strftime("%Y-%m-%d"),
+                "Pris A": f"{r.price_a:.2f}" if r.price_a is not None else "-",
+                "Datum B": r.date_b.strftime("%Y-%m-%d"),
+                "Pris B": f"{r.price_b:.2f}" if r.price_b is not None else "-",
+                "Förändring": (
+                    f"{r.abs_change:.2f}" if r.abs_change is not None else "-"
+                ),
+                "Förändring %": (
+                    f"{r.pct_change:.2f}%" if r.pct_change is not None else "-"
+                ),
+                "Status": status,
+            }
+        )
+
+    st.table(table_rows)
+
+
 def main():
     # Sidebar
     with st.sidebar:
         st.image("https://github.com/AI4Finance-Foundation/FinGPT/raw/master/figs/logo.png", width=100)
         st.title("FinGPT Forecaster")
         st.markdown("---")
-
-        # Trained tickers (Dow 30 subset used in this project)
-        TRAINED_TICKERS = [
-            "AAPL", "AMZN", "CRM", "CSCO", "GOOGL", "IBM",
-            "INTC", "META", "MSFT", "NVDA", "TSLA", "TSM"
-        ]
 
         tickers = st.multiselect(
             "Select Tickers (Trained Dow 30)",
@@ -341,7 +527,12 @@ def main():
             if save_error:
                 st.warning(f"Could not save results to disk: {save_error}")
             elif saved_path and st.session_state["prediction_results"]:
-                st.success(f"Saved {len(st.session_state['prediction_results'])} predictions to {saved_path}")
+                st.success(
+                    f"Saved {len(st.session_state['prediction_results'])} predictions to {saved_path}"
+                )
+
+    # Always allow on‑demand price comparison between two arbitrary dates.
+    render_price_comparison_section()
 
     if st.session_state["prediction_errors"]:
         st.markdown("---")
