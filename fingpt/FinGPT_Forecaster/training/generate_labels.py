@@ -1250,13 +1250,18 @@ def main():
             api_key=openrouter_key,
         )
 
-    # Finnhub is optional (used for company profiles)
-    finnhub_client = None
+    # Finnhub is REQUIRED (used for company profiles and to keep training/inference aligned)
     finnhub_api_key = os.environ.get("FINNHUB_API_KEY")
-    if finnhub_api_key:
+    if not finnhub_api_key:
+        raise ValueError(
+            "FINNHUB_API_KEY is required but not set. "
+            "Set FINNHUB_API_KEY in your environment before running generate_labels.py."
+        )
+
+    try:
         finnhub_client = finnhub.Client(api_key=finnhub_api_key)
-    else:
-        print("Note: FINNHUB_API_KEY not set. Company profiles will be skipped.")
+    except Exception as e:
+        raise RuntimeError(f"Failed to initialize Finnhub client: {e}")
     
     # Find symbols
     if args.symbols == 'all':

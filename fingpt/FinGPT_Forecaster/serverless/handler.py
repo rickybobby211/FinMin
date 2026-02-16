@@ -498,7 +498,7 @@ def get_news(symbol, data):
     if finnhub_client is None:
         data['News'] = [json.dumps([])] * len(data)
         return data
-    
+
     # Setup DeepSeek client
     llm_client = None
     deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
@@ -513,6 +513,16 @@ def get_news(symbol, data):
             print(f"    [DeepSeek] Failed to init client: {e}", flush=True)
     else:
         print("    [DeepSeek] Warning: DEEPSEEK_API_KEY not found in environment variables", flush=True)
+
+    # Enforce Strategy: LLM-based news ranking is mandatory for predictions.
+    # We explicitly disallow falling back to heuristic relevance-only ranking,
+    # to keep training/inference behaviour aligned.
+    if llm_client is None:
+        raise RuntimeError(
+            "DeepSeek news ranking (rank_news_with_llm) is required for predictions, "
+            "but the client could not be initialized. "
+            "Set DEEPSEEK_API_KEY and ensure the DeepSeek API is reachable."
+        )
 
     news_list = []
     for _, row in data.iterrows():
@@ -534,12 +544,8 @@ def get_news(symbol, data):
                     "summary": n.get('summary', '')
                 })
 
-            if llm_client:
-                # Use LLM selection
-                selected_news = rank_news_with_llm(processed_news, 5, symbol, llm_client, "deepseek-chat")
-            else:
-                # Use fallback relevance scoring
-                selected_news = rank_news_by_relevance(processed_news, end_date)[:5]
+            # Use LLM selection (Strategy: only LLM-based ranking is allowed here)
+            selected_news = rank_news_with_llm(processed_news, 5, symbol, llm_client, "deepseek-chat")
             
             # Sort chronologically for the model (oldest to newest)
             selected_news.sort(key=lambda x: x['date'])
