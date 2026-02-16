@@ -291,7 +291,12 @@ class UploadedPrediction:
 class PredictionCsvParser:
     """Parsar predictions-CSV från parse_prediction.py."""
 
-    REQUIRED_COLUMNS = {"ticker", "date", "move"}
+    REQUIRED_BASE_COLUMNS = {"ticker", "date"}
+    MOVE_ALIASES = ("move", "prediction", "prediktion")
+    TICKER_ALIASES = ("ticker", "symbol")
+    DATE_ALIASES = ("date", "target_week", "target week")
+    CONFIDENCE_ALIASES = ("confidence", "confidence level")
+    TEXT_ALIASES = ("text", "analysis")
 
     def parse(self, uploaded_file) -> tuple[list[UploadedPrediction], str | None]:
         if uploaded_file is None:
@@ -305,8 +310,13 @@ class PredictionCsvParser:
         if not raw_text.strip():
             return [], "CSV-filen är tom."
 
+        lines = raw_text.splitlines()
+        if lines and lines[0].strip().lower().startswith("sep="):
+            # Excel-export kan ha "sep=;" på första raden.
+            raw_text = "\n".join(lines[1:])
+
         try:
-            sample = raw_text[:2048]
+            sample = raw_text[:2048] if raw_text else ""
             delimiter = csv.Sniffer().sniff(sample, delimiters=";,").delimiter
         except csv.Error:
             # parse_prediction.py skriver semikolon, men vi tillater komma som fallback.
@@ -316,20 +326,27 @@ class PredictionCsvParser:
         if not reader.fieldnames:
             return [], "CSV-filen saknar header."
 
-        normalized_columns = {col.strip().lower() for col in reader.fieldnames}
-        if not self.REQUIRED_COLUMNS.issubset(normalized_columns):
+        normalized_columns = {
+            col.strip().lower() for col in reader.fieldnames if isinstance(col, str)
+        }
+        has_required_base = self.REQUIRED_BASE_COLUMNS.issubset(normalized_columns)
+        has_move_or_prediction = any(
+            alias in normalized_columns for alias in self.MOVE_ALIASES
+        )
+        if not has_required_base or not has_move_or_prediction:
             return [], (
                 "CSV-filen saknar obligatoriska kolumner. "
-                "Förväntat minst: ticker, date, move."
+                "Förväntat minst: ticker, date och move/prediction."
             )
 
         records: list[UploadedPrediction] = []
         for row in reader:
-            ticker = (row.get("ticker") or row.get("Ticker") or "").strip().upper()
-            pred_date = (row.get("date") or row.get("Date") or "").strip()
-            move = (row.get("move") or row.get("Move") or "").strip()
-            confidence = (row.get("confidence") or row.get("Confidence") or "").strip()
-            text = (row.get("text") or row.get("Text") or "").strip()
+            normalized_row = self._normalize_row(row)
+            ticker = self._first_value(normalized_row, self.TICKER_ALIASES).upper()
+            pred_date = self._first_value(normalized_row, self.DATE_ALIASES)
+            move = self._first_value(normalized_row, self.MOVE_ALIASES)
+            confidence = self._first_value(normalized_row, self.CONFIDENCE_ALIASES)
+            text = self._first_value(normalized_row, self.TEXT_ALIASES)
 
             if not ticker:
                 continue
@@ -352,6 +369,21 @@ class PredictionCsvParser:
             return [], "Inga giltiga predictions hittades i CSV-filen."
 
         return records, None
+
+    def _normalize_row(self, row: dict) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, value in row.items():
+            if not isinstance(key, str):
+                continue
+            normalized[key.strip().lower()] = (value or "").strip()
+        return normalized
+
+    def _first_value(self, row: dict[str, str], aliases: tuple[str, ...]) -> str:
+        for alias in aliases:
+            value = row.get(alias)
+            if value:
+                return value
+        return ""
 
     def _extract_direction(self, move_text: str) -> str | None:
         normalized = move_text.lower().strip()
