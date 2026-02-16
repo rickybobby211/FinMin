@@ -263,7 +263,13 @@ class YahooPriceDataProvider(PriceDataProvider):
         if closes.empty:
             return None
 
-        return float(closes.iloc[-1])
+        last_close = closes.iloc[-1]
+        # yfinance kan returnera en single-column DataFrame/Series i "Close".
+        if hasattr(last_close, "iloc"):
+            if len(last_close) == 0:
+                return None
+            return float(last_close.iloc[0])
+        return float(last_close)
 
 
 @dataclass
@@ -298,47 +304,125 @@ class PredictionCsvParser:
     CONFIDENCE_ALIASES = ("confidence", "confidence level")
     TEXT_ALIASES = ("text", "analysis")
 
+    def __init__(self):
+        self.last_debug_info: dict | None = None
+
     def parse(self, uploaded_file) -> tuple[list[UploadedPrediction], str | None]:
         if uploaded_file is None:
+            self.last_debug_info = None
             return [], None
 
         try:
             raw_text = uploaded_file.getvalue().decode("utf-8-sig")
         except UnicodeDecodeError:
+            self.last_debug_info = {
+                "error": "decode_error",
+                "message": "Kunde inte läsa filen som UTF-8.",
+            }
             return [], "Kunde inte läsa filen. Kontrollera att CSV-filen är UTF-8-kodad."
 
         if not raw_text.strip():
+            self.last_debug_info = {
+                "error": "empty_file",
+                "message": "CSV-filen är tom.",
+            }
             return [], "CSV-filen är tom."
 
+        explicit_delimiter = None
         lines = raw_text.splitlines()
         if lines and lines[0].strip().lower().startswith("sep="):
             # Excel-export kan ha "sep=;" på första raden.
+            sep_value = lines[0].split("=", 1)[1].strip()
+            if sep_value:
+                explicit_delimiter = sep_value[0]
             raw_text = "\n".join(lines[1:])
 
-        try:
-            sample = raw_text[:2048] if raw_text else ""
-            delimiter = csv.Sniffer().sniff(sample, delimiters=";,").delimiter
-        except csv.Error:
-            # parse_prediction.py skriver semikolon, men vi tillater komma som fallback.
-            delimiter = ";"
+        primary_delimiter = self._detect_delimiter(raw_text, explicit_delimiter)
+        candidate_delimiters = [primary_delimiter]
+        fallback_delimiter = "," if primary_delimiter == ";" else ";"
+        if fallback_delimiter not in candidate_delimiters:
+            candidate_delimiters.append(fallback_delimiter)
 
-        reader = csv.DictReader(io.StringIO(raw_text), delimiter=delimiter)
-        if not reader.fieldnames:
-            return [], "CSV-filen saknar header."
-
-        normalized_columns = {
-            col.strip().lower() for col in reader.fieldnames if isinstance(col, str)
+        self.last_debug_info = {
+            "explicit_delimiter": explicit_delimiter,
+            "primary_delimiter": primary_delimiter,
+            "attempted_delimiters": candidate_delimiters,
+            "selected_delimiter": None,
+            "raw_headers": [],
+            "normalized_headers": [],
+            "attempts": [],
         }
-        has_required_base = self.REQUIRED_BASE_COLUMNS.issubset(normalized_columns)
-        has_move_or_prediction = any(
-            alias in normalized_columns for alias in self.MOVE_ALIASES
-        )
-        if not has_required_base or not has_move_or_prediction:
-            return [], (
-                "CSV-filen saknar obligatoriska kolumner. "
-                "Förväntat minst: ticker, date och move/prediction."
-            )
 
+        last_detected_columns = "(inga)"
+        for delimiter in candidate_delimiters:
+            reader = csv.DictReader(io.StringIO(raw_text), delimiter=delimiter)
+            if not reader.fieldnames:
+                self.last_debug_info["attempts"].append(
+                    {
+                        "delimiter": delimiter,
+                        "raw_headers": [],
+                        "normalized_headers": [],
+                        "has_required_base": False,
+                        "has_move_or_prediction": False,
+                    }
+                )
+                continue
+
+            raw_headers = [col for col in reader.fieldnames if isinstance(col, str)]
+            normalized_columns = {
+                col.strip().lower() for col in raw_headers
+            }
+            last_detected_columns = ", ".join(sorted(normalized_columns)) or "(inga)"
+            has_required_base = self.REQUIRED_BASE_COLUMNS.issubset(normalized_columns)
+            has_move_or_prediction = any(
+                alias in normalized_columns for alias in self.MOVE_ALIASES
+            )
+            self.last_debug_info["attempts"].append(
+                {
+                    "delimiter": delimiter,
+                    "raw_headers": raw_headers,
+                    "normalized_headers": sorted(normalized_columns),
+                    "has_required_base": has_required_base,
+                    "has_move_or_prediction": has_move_or_prediction,
+                }
+            )
+            if not has_required_base or not has_move_or_prediction:
+                continue
+
+            records = self._build_records(reader)
+            if records:
+                self.last_debug_info["selected_delimiter"] = delimiter
+                self.last_debug_info["raw_headers"] = raw_headers
+                self.last_debug_info["normalized_headers"] = sorted(normalized_columns)
+                return records, None
+
+        if self.last_debug_info["attempts"]:
+            last_attempt = self.last_debug_info["attempts"][-1]
+            self.last_debug_info["raw_headers"] = last_attempt["raw_headers"]
+            self.last_debug_info["normalized_headers"] = last_attempt["normalized_headers"]
+
+        return [], (
+            "CSV-filen saknar obligatoriska kolumner. "
+            "Förväntat minst: ticker, date och move/prediction. "
+            f"Hittade kolumner: {last_detected_columns}"
+        )
+
+    def _normalize_row(self, row: dict) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, value in row.items():
+            if not isinstance(key, str):
+                continue
+            normalized[key.strip().lower()] = (value or "").strip()
+        return normalized
+
+    def _first_value(self, row: dict[str, str], aliases: tuple[str, ...]) -> str:
+        for alias in aliases:
+            value = row.get(alias)
+            if value:
+                return value
+        return ""
+
+    def _build_records(self, reader: csv.DictReader) -> list[UploadedPrediction]:
         records: list[UploadedPrediction] = []
         for row in reader:
             normalized_row = self._normalize_row(row)
@@ -364,25 +448,31 @@ class PredictionCsvParser:
                     expected_pct_change=expected_pct_change,
                 )
             )
+        return records
 
-        if not records:
-            return [], "Inga giltiga predictions hittades i CSV-filen."
+    def _detect_delimiter(self, raw_text: str, explicit_delimiter: str | None) -> str:
+        if explicit_delimiter in (";", ","):
+            return explicit_delimiter
 
-        return records, None
+        header_line = self._first_non_empty_line(raw_text)
+        if header_line:
+            semicolon_count = header_line.count(";")
+            comma_count = header_line.count(",")
+            if semicolon_count > 0 or comma_count > 0:
+                # Prioritera delimiter som bäst matchar headern.
+                return ";" if semicolon_count >= comma_count else ","
 
-    def _normalize_row(self, row: dict) -> dict[str, str]:
-        normalized: dict[str, str] = {}
-        for key, value in row.items():
-            if not isinstance(key, str):
-                continue
-            normalized[key.strip().lower()] = (value or "").strip()
-        return normalized
+        sample = "\n".join(raw_text.splitlines()[:20])[:4096]
+        try:
+            return csv.Sniffer().sniff(sample, delimiters=";,").delimiter
+        except csv.Error:
+            # parse_prediction.py skriver semikolon som standard.
+            return ";"
 
-    def _first_value(self, row: dict[str, str], aliases: tuple[str, ...]) -> str:
-        for alias in aliases:
-            value = row.get(alias)
-            if value:
-                return value
+    def _first_non_empty_line(self, raw_text: str) -> str:
+        for line in raw_text.splitlines():
+            if line.strip():
+                return line.strip()
         return ""
 
     def _extract_direction(self, move_text: str) -> str | None:
@@ -567,6 +657,20 @@ def render_price_comparison_section():
 
     parser = PredictionCsvParser()
     prediction_rows, parse_error = parser.parse(uploaded_prediction_csv)
+    if uploaded_prediction_csv is not None and parser.last_debug_info is not None:
+        with st.expander("CSV debug (delimiter + headers)", expanded=False):
+            debug_info = parser.last_debug_info
+            st.write(
+                f"Primary delimiter: `{debug_info.get('primary_delimiter')}` | "
+                f"Selected delimiter: `{debug_info.get('selected_delimiter')}`"
+            )
+            st.write(
+                "Headers: "
+                + ", ".join(debug_info.get("normalized_headers", []))
+                if debug_info.get("normalized_headers")
+                else "Headers: (inga)"
+            )
+            st.json(debug_info)
     if parse_error:
         st.warning(parse_error)
 
@@ -626,7 +730,7 @@ def render_price_comparison_section():
                 return "background-color: #f8d7da; color: #721c24; font-weight: 600;"
             return "background-color: #f1f3f5; color: #6c757d;"
 
-        styled_dataframe = dataframe.style.applymap(
+        styled_dataframe = dataframe.style.map(
             highlight_direction_match,
             subset=["Rätt Riktning"],
         )
