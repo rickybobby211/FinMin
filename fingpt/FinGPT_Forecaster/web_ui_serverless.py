@@ -428,15 +428,28 @@ class PredictionCsvParser:
             normalized_row = self._normalize_row(row)
             ticker = self._first_value(normalized_row, self.TICKER_ALIASES).upper()
             pred_date = self._first_value(normalized_row, self.DATE_ALIASES)
-            move = self._first_value(normalized_row, self.MOVE_ALIASES)
+            raw_move = self._first_value(normalized_row, self.MOVE_ALIASES)
             confidence = self._first_value(normalized_row, self.CONFIDENCE_ALIASES)
             text = self._first_value(normalized_row, self.TEXT_ALIASES)
 
             if not ticker:
                 continue
 
-            direction = self._extract_direction(move)
-            expected_pct_change = self._extract_expected_pct_change(move, direction)
+            move = self._extract_compact_move(raw_move)
+            if not move and text:
+                move = self._extract_compact_move(text)
+
+            direction = self._extract_direction(move or raw_move)
+            if direction is None and text:
+                direction = self._extract_direction(text)
+
+            if not move and direction is not None:
+                move = direction
+
+            expected_pct_change = self._extract_expected_pct_change(
+                move or raw_move,
+                direction,
+            )
             records.append(
                 UploadedPrediction(
                     ticker=ticker,
@@ -480,16 +493,62 @@ class PredictionCsvParser:
         if not normalized:
             return None
 
-        if any(token in normalized for token in ("up", "bullish", "increase", "higher")):
+        phrase_match = re.search(
+            r"(?:next\s+week\s+)?prediction\s*[:\-]\s*(up|down|flat|sideways)\b",
+            normalized,
+        )
+        if phrase_match:
+            token = phrase_match.group(1)
+            return "FLAT" if token == "sideways" else token.upper()
+
+        move_match = re.search(r"\b(up|down|flat|sideways)\b\s*by\s*-?\d", normalized)
+        if move_match:
+            token = move_match.group(1)
+            return "FLAT" if token == "sideways" else token.upper()
+
+        if normalized in ("up", "down", "flat", "sideways"):
+            return "FLAT" if normalized == "sideways" else normalized.upper()
+
+        if any(token in normalized for token in ("bullish", "increase", "higher")):
             return "UP"
-        if any(
-            token in normalized
-            for token in ("down", "bearish", "decrease", "lower", "drop")
-        ):
+        if any(token in normalized for token in ("bearish", "decrease", "lower", "drop")):
             return "DOWN"
-        if "flat" in normalized or "sideways" in normalized:
-            return "FLAT"
         return None
+
+    def _extract_compact_move(self, move_text: str) -> str:
+        normalized = " ".join(move_text.strip().split())
+        if not normalized:
+            return ""
+
+        prediction_with_pct = re.search(
+            r"(?:next\s+week\s+)?prediction\s*[:\-]\s*"
+            r"(up|down|flat|sideways)\s*(?:by\s*"
+            r"(-?\d+(?:[.,]\d+)?(?:\s*-\s*-?\d+(?:[.,]\d+)?)?)\s*%)?",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if prediction_with_pct:
+            direction_token = prediction_with_pct.group(1).lower()
+            pct_token = prediction_with_pct.group(2)
+            direction = "FLAT" if direction_token == "sideways" else direction_token.upper()
+            if pct_token:
+                return f"{direction} by {pct_token.replace(',', '.')}%"
+            return direction
+
+        direct_move_with_pct = re.search(
+            r"\b(up|down|flat|sideways)\b\s*by\s*"
+            r"(-?\d+(?:[.,]\d+)?(?:\s*-\s*-?\d+(?:[.,]\d+)?)?)\s*%",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if direct_move_with_pct:
+            direction_token = direct_move_with_pct.group(1).lower()
+            pct_token = direct_move_with_pct.group(2)
+            direction = "FLAT" if direction_token == "sideways" else direction_token.upper()
+            return f"{direction} by {pct_token.replace(',', '.')}%"
+
+        direction = self._extract_direction(normalized)
+        return direction or ""
 
     def _extract_expected_pct_change(
         self, move_text: str, direction: str | None
@@ -702,18 +761,12 @@ def render_price_comparison_section():
                     f"{r.pct_change:.2f}%" if r.pct_change is not None else "-"
                 ),
                 "Status": status,
-                "Prediction Datum": prediction_row.date if prediction_row else "-",
                 "Prediction Move": prediction_row.move if prediction_row else "-",
-                "Confidence": prediction_row.confidence if prediction_row else "-",
                 "Pred. Riktning": predicted_direction or "-",
                 "Faktisk Riktning": actual_direction or "-",
                 "Rätt Riktning": prediction_compare_service.direction_match(
                     predicted_direction,
                     actual_direction,
-                ),
-                "Avvikelse %": prediction_compare_service.pct_gap(
-                    prediction_row.expected_pct_change if prediction_row else None,
-                    r.pct_change,
                 ),
             }
         )
@@ -730,13 +783,14 @@ def render_price_comparison_section():
                 return "background-color: #f8d7da; color: #721c24; font-weight: 600;"
             return "background-color: #f1f3f5; color: #6c757d;"
 
+        # Fokus pa riktningstraff: gron vid ratt hall, rod vid fel.
         styled_dataframe = dataframe.style.map(
             highlight_direction_match,
             subset=["Rätt Riktning"],
         )
-        st.table(styled_dataframe)
+        st.dataframe(styled_dataframe, use_container_width=True, hide_index=True)
     except Exception:
-        st.table(table_rows)
+        st.dataframe(table_rows, use_container_width=True, hide_index=True)
 
 
 def main():
