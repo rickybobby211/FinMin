@@ -164,7 +164,7 @@ class PredictionResultRepository:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def append(self, prediction_date, ticker, prediction_text):
+    def append(self, prediction_date, ticker, prediction_text, confidence_level):
         file_path = self.base_dir / f"predictions_{prediction_date}.csv"
         is_new_file = not file_path.exists()
 
@@ -172,11 +172,39 @@ class PredictionResultRepository:
             with file_path.open("a", newline="", encoding="utf-8") as file_handle:
                 writer = csv.writer(file_handle)
                 if is_new_file:
-                    writer.writerow(["prediction", "ticker", "date"])
-                writer.writerow([prediction_text, ticker, prediction_date])
+                    writer.writerow(["prediction", "ticker", "date", "confidence_level"])
+                writer.writerow([prediction_text, ticker, prediction_date, confidence_level])
             return file_path, None
         except OSError as exc:
             return file_path, str(exc)
+
+
+class PredictionTextParser:
+    """Parser för att extrahera strukturerad metadata ur prediction-text."""
+
+    CONFIDENCE_REGEX = re.compile(
+        r"(?:\*\*)?\s*(?:confidence|confidence level)(?:\*\*)?\s*:\s*([0-9]+(?:[.,][0-9]+)?\s*%)",
+        re.IGNORECASE,
+    )
+    CONFIDENCE_FALLBACK_REGEX = re.compile(
+        r"([0-9]+(?:[.,][0-9]+)?\s*%)\s+confidence\b|\bconfidence\b[^%\n\r]*([0-9]+(?:[.,][0-9]+)?\s*%)",
+        re.IGNORECASE,
+    )
+
+    def extract_confidence_level(self, prediction_text: str) -> str:
+        if not prediction_text:
+            return ""
+
+        match = self.CONFIDENCE_REGEX.search(prediction_text)
+        if match:
+            return match.group(1).replace(" ", "").replace(",", ".")
+
+        fallback = self.CONFIDENCE_FALLBACK_REGEX.search(prediction_text)
+        if fallback:
+            value = fallback.group(1) or fallback.group(2)
+            if value:
+                return value.replace(" ", "").replace(",", ".")
+        return ""
 
 
 class RetryPolicy:
@@ -853,6 +881,7 @@ def render_price_comparison_section():
                 ),
                 "Status": status,
                 "Prediction Move": prediction_row.move if prediction_row else "-",
+                "Confidence Level": prediction_row.confidence if prediction_row else "-",
                 "Pred. Riktning": predicted_direction or "-",
                 "Faktisk Riktning": actual_direction or "-",
                 "Rätt Riktning": prediction_compare_service.direction_match(
@@ -954,6 +983,7 @@ def main():
             payload_builder = PredictionPayloadBuilder(prediction_date, n_weeks, use_basics)
             result_repository = PredictionResultRepository(RESULTS_DIR)
             job_runner = PredictionJobRunner(RetryPolicy())
+            text_parser = PredictionTextParser()
             headers = {
                 "Authorization": f"Bearer {API_KEY}",
                 "Content-Type": "application/json"
@@ -997,18 +1027,21 @@ def main():
                 raw_text = output.get("prediction", "No prediction text returned.")
                 resolved_ticker = output.get("ticker", job.ticker)
                 resolved_date = output.get("date", prediction_date_str)
+                confidence_level = text_parser.extract_confidence_level(raw_text)
 
                 st.session_state["prediction_results"].append({
                     "ticker": resolved_ticker,
                     "date": resolved_date,
                     "prediction": raw_text,
+                    "confidence_level": confidence_level,
                     "raw_result": result
                 })
 
                 saved_path, save_error = result_repository.append(
                     prediction_date=resolved_date,
                     ticker=resolved_ticker,
-                    prediction_text=raw_text
+                    prediction_text=raw_text,
+                    confidence_level=confidence_level,
                 )
 
             if save_error:
@@ -1033,12 +1066,21 @@ def main():
 
         csv_buffer = io.StringIO()
         csv_writer = csv.writer(csv_buffer)
-        csv_writer.writerow(["prediction", "ticker", "date"])
+        csv_writer.writerow(["prediction", "ticker", "date", "confidence_level"])
 
         for item in st.session_state["prediction_results"]:
-            csv_writer.writerow([item["prediction"], item["ticker"], item["date"]])
+            csv_writer.writerow(
+                [
+                    item["prediction"],
+                    item["ticker"],
+                    item["date"],
+                    item.get("confidence_level", ""),
+                ]
+            )
             st.subheader(f"📊 Analysis for {item['ticker']}")
             st.caption(f"Target Week: {item['date']}")
+            if item.get("confidence_level"):
+                st.caption(f"Confidence Level: {item['confidence_level']}")
 
             st.markdown(f"""
             <div class="prediction-box">
