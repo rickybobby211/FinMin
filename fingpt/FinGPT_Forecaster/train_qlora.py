@@ -9,6 +9,7 @@ import torch
 import os
 import re
 import sys
+import importlib.util
 import wandb
 import argparse
 from datetime import datetime
@@ -107,6 +108,45 @@ def main(args):
         trust_remote_code=True,
         attn_implementation=args.attn_implementation
     )
+
+    flash_attn_installed = importlib.util.find_spec("flash_attn") is not None
+    resolved_attn_impl = getattr(
+        model.config,
+        "_attn_implementation",
+        getattr(model.config, "attn_implementation", None)
+    )
+
+    if args.local_rank == 0:
+        print(f"flash_attn installed: {flash_attn_installed}")
+        print(f"requested attn impl: {args.attn_implementation}")
+        print(f"resolved attn impl: {resolved_attn_impl}")
+
+    if args.attn_implementation == "flash_attention_2":
+        flash_attn_errors = []
+        if not flash_attn_installed:
+            flash_attn_errors.append(
+                "flash_attention_2 requested, but package 'flash_attn' is not installed."
+            )
+        if resolved_attn_impl != "flash_attention_2":
+            flash_attn_errors.append(
+                "flash_attention_2 requested, but model did not activate it. "
+                f"Resolved implementation: {resolved_attn_impl}"
+            )
+
+        if flash_attn_errors:
+            error_message = "\n".join(f"- {msg}" for msg in flash_attn_errors)
+            if args.strict_flash_attn:
+                raise RuntimeError(
+                    "Flash Attention runtime verification failed:\n"
+                    f"{error_message}\n"
+                    "Disable strict mode with --no_strict_flash_attn to continue anyway."
+                )
+            if args.local_rank == 0:
+                print(
+                    "WARNING: Flash Attention runtime verification failed, "
+                    "continuing because strict mode is disabled:"
+                )
+                print(error_message)
 
     if args.local_rank == 0:
         print(model)
@@ -271,6 +311,19 @@ if __name__ == "__main__":
         type=str,
         help="Attention backend (e.g., flash_attention_2, sdpa, eager)"
     )
+    parser.add_argument(
+        "--strict_flash_attn",
+        dest="strict_flash_attn",
+        action="store_true",
+        help="Fail fast if flash_attention_2 is requested but not active."
+    )
+    parser.add_argument(
+        "--no_strict_flash_attn",
+        dest="strict_flash_attn",
+        action="store_false",
+        help="Warn instead of failing when flash_attention_2 is unavailable."
+    )
+    parser.set_defaults(strict_flash_attn=True)
     args = parser.parse_args()
     
     # WANDB_API_KEY should be set as environment variable:
