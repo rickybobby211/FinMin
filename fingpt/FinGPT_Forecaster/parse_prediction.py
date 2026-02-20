@@ -17,15 +17,32 @@ class PredictionRecord:
 
 class PredictionParser:
     """Ansvarar för att parsa textfilen till PredictionRecord-objekt."""
-    PRED_REGEX = re.compile(r'^\s*Prediction:(.*)', re.IGNORECASE)
-    CONF_REGEX = re.compile(r'^\s*Confidence:(.*)', re.IGNORECASE)
-    CONF_LEVEL_REGEX = re.compile(r'^\s*Confidence Level:(.*)', re.IGNORECASE)
+    # Fångar t.ex. "Prediction: ...", "**Prediction**: ...", "Predicted Movement: ..."
+    PRED_REGEX = re.compile(
+        r'^\s*(?:\*\*)?(?:prediction|predicted movement|next week prediction|summary prediction|price direction prediction|final prediction)(?:\*\*)?\s*:\s*(.*)$',
+        re.IGNORECASE,
+    )
+    # Fångar t.ex. "Confidence: ...", "**Confidence**: ...", "Confidence Level: ..."
+    CONF_REGEX = re.compile(
+        r'^\s*(?:\*\*)?(?:confidence|confidence level)(?:\*\*)?\s*:\s*(.*)$',
+        re.IGNORECASE,
+    )
+    CONF_LEVEL_REGEX = CONF_REGEX
     TICKER_REGEX = re.compile(r'Analysis\s+for\s+([A-Z0-9\.-]+)', re.IGNORECASE)
-    DATE_REGEX = re.compile(r'Target Week:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})')
+    DATE_REGEX = re.compile(r'Target Week:\s*(\d{4}-\d{2}-\d{2})')
+    MOVE_FALLBACK_REGEX = re.compile(
+        r'\b(UP|DOWN)\b\s+by\s+(?:approximately\s+)?([+-]?\d+(?:\.\d+)?%)',
+        re.IGNORECASE,
+    )
+    CONF_FALLBACK_REGEX = re.compile(
+        r'(\d+(?:\.\d+)?%)\s+confidence\b|\bconfidence\b[^%\n\r]*(\d+(?:\.\d+)?%)',
+        re.IGNORECASE,
+    )
 
     def parse(self, content: str) -> list[PredictionRecord]:
-        # Dela upp på block som separeras av "View Raw API Response"
-        blocks = content.split("View Raw API Response")
+        # Dela upp på varje "Analysis for <TICKER>" så vi inte är beroende
+        # av att "View Raw API Response" finns mellan alla sektioner.
+        blocks = self._split_into_ticker_blocks(content)
         records: list[PredictionRecord] = []
 
         for block in blocks:
@@ -46,6 +63,30 @@ class PredictionParser:
             records.append(PredictionRecord(ticker, date, move, confidence, text))
 
         return records
+
+    def _split_into_ticker_blocks(self, content: str) -> list[str]:
+        lines = content.splitlines()
+        blocks: list[list[str]] = []
+        current: list[str] = []
+
+        for line in lines:
+            # Start på ny ticker-sektion
+            if self.TICKER_REGEX.search(line):
+                if current:
+                    blocks.append(current)
+                current = [line]
+            else:
+                if current:
+                    current.append(line)
+
+        if current:
+            blocks.append(current)
+
+        # Fallback om inga ticker-sektioner hittades
+        if not blocks:
+            return [content]
+
+        return ["\n".join(block) for block in blocks]
 
     def _clean(self, s: str) -> str:
         # Ta bort enkel markdown (** och `) m.m.
@@ -69,32 +110,51 @@ class PredictionParser:
 
     def _extract_prediction(self, lines: list[str]) -> str:
         for line in lines:
-            lower = line.lower()
-            # Hoppa "Price Direction Prediction" och "Final Prediction" – ta den första "vanliga"
-            if lower.startswith("price direction prediction"):
-                continue
-            if lower.startswith("final prediction"):
-                continue
-
             m = self.PRED_REGEX.match(line)
             if m:
-                return self._clean(m.group(1))
+                value = self._clean(m.group(1))
+                if value:
+                    return value
+
+        # Fallback: leta rörelse var som helst i sektionen.
+        for line in lines:
+            m = self.MOVE_FALLBACK_REGEX.search(line)
+            if m:
+                direction = m.group(1).upper()
+                magnitude = m.group(2)
+                return f"{direction} by {magnitude}"
+
+        return ""
+
+    def _first_cleaned_match(self, lines: list[str], patterns: list[re.Pattern[str]]) -> str:
+        for line in lines:
+            for pattern in patterns:
+                m = pattern.match(line)
+                if m:
+                    value = self._clean(m.group(1))
+                    if value:
+                        return value
+        return ""
+
+    def _extract_confidence_fallback(self, lines: list[str]) -> str:
+        for line in lines:
+            m = self.CONF_FALLBACK_REGEX.search(line)
+            if not m:
+                continue
+
+            value = m.group(1) or m.group(2)
+            if value:
+                return value.strip()
+
         return ""
 
     def _extract_confidence(self, lines: list[str]) -> str:
-        # Först "Confidence:"
-        for line in lines:
-            m = self.CONF_REGEX.match(line)
-            if m:
-                return self._clean(m.group(1))
+        # Först explicita confidence-rader, sedan textfallback.
+        value = self._first_cleaned_match(lines, [self.CONF_REGEX, self.CONF_LEVEL_REGEX])
+        if value:
+            return value
 
-        # Fallback: "Confidence Level:"
-        for line in lines:
-            m = self.CONF_LEVEL_REGEX.match(line)
-            if m:
-                return self._clean(m.group(1))
-
-        return ""
+        return self._extract_confidence_fallback(lines)
 
     def _extract_text(self, lines: list[str]) -> str:
         filtered: list[str] = []
