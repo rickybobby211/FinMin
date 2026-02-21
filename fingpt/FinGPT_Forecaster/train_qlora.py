@@ -224,10 +224,13 @@ def main(args):
         eval_strategy=args.evaluation_strategy,
         remove_unused_columns=False,
         report_to='wandb',
-        run_name=args.run_name
+        run_name=args.run_name,
+        gradient_checkpointing=args.gradient_checkpointing
     )
     
-    model.gradient_checkpointing_enable()
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+        
     model.enable_input_require_grads()
     model.is_parallelizable = True
     model.model_parallel = True
@@ -305,6 +308,7 @@ if __name__ == "__main__":
     parser.add_argument("--eval_steps", default=0.1, type=float)    
     parser.add_argument("--from_remote", default=False, type=bool)
     parser.add_argument("--load_in_4bit", action='store_true', help="Load model in 4-bit precision")    
+    parser.add_argument("--gradient_checkpointing", action='store_true', help="Enable gradient checkpointing")
     parser.add_argument(
         "--attn_implementation",
         default="flash_attention_2",
