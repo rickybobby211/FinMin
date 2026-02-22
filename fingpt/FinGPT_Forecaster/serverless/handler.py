@@ -35,10 +35,10 @@ print("--- HANDLER STARTUP: Imports finished ---", flush=True)
 # ============================================================================
 
 MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
-ADAPTER_ID = os.environ.get("ADAPTER_PATH", "rickson21/qwen2.5-32b-finmin-v1")
+ADAPTER_ID = os.environ.get("ADAPTER_PATH")
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "32768"))
 MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "512"))
-DEFAULT_TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.2"))
+DEFAULT_TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.7"))
 print(f"--- GENERATION: Using temperature={DEFAULT_TEMPERATURE}", flush=True)
 ANSWER_START_MARKER = "### ANSWER START"
 INCLUDE_PROMPT_IN_RESPONSE = os.environ.get("INCLUDE_PROMPT_IN_RESPONSE", "0")
@@ -276,6 +276,10 @@ def load_model():
         if not hf_token:
             print("ERROR: HF_TOKEN environment variable not set!", flush=True)
             raise ValueError("HF_TOKEN environment variable not set")
+            
+        if not ADAPTER_ID:
+            print("ERROR: ADAPTER_PATH environment variable not set!", flush=True)
+            raise ValueError("ADAPTER_PATH environment variable is missing. Please configure ADAPTER_PATH in RunPod environment variables.")
         
         print(f"Using Model ID: {MODEL_ID}", flush=True)
         print(f"Using Adapter ID: {ADAPTER_ID}", flush=True)

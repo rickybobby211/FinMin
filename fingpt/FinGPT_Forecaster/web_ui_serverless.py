@@ -14,9 +14,9 @@ import yfinance as yf
 # CONFIGURATION
 # ============================================================================
 
+import concurrent.futures
+
 # RunPod Configuration
-RUNPOD_API_ID = "4fbwlg7yhbwu2u"  # TODO: Replace with your new Endpoint ID
-BASE_URL = f"https://api.runpod.ai/v2/{RUNPOD_API_ID}"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 # Trained tickers (Dow 30 subset used in this project)
@@ -73,11 +73,11 @@ st.markdown("""
 # APP LOGIC
 # ============================================================================
 
-def run_prediction(payload, headers):
+def run_prediction(payload, headers, base_url):
     """Start prediction job and poll for status."""
     
     # 1. Start Job (Async)
-    run_url = f"{BASE_URL}/run"
+    run_url = f"{base_url}/run"
     response = requests.post(run_url, json=payload, headers=headers)
     
     if response.status_code != 200:
@@ -90,10 +90,7 @@ def run_prediction(payload, headers):
          return {"error": "No Job ID returned", "details": job_data}
          
     # 2. Poll for completion
-    status_url = f"{BASE_URL}/status/{job_id}"
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
+    status_url = f"{base_url}/status/{job_id}"
     start_time = time.time()
     
     while True:
@@ -111,31 +108,18 @@ def run_prediction(payload, headers):
         status = status_data.get("status")
         
         if status == "COMPLETED":
-            progress_bar.progress(100)
-            status_text.text("Analysis Complete!")
             return status_data
             
         elif status == "FAILED":
             return {"error": "Job Failed on Server", "details": status_data}
-            
-        elif status == "IN_QUEUE":
-            status_text.text("Job in Queue... (Scaling up GPU)")
-            progress_bar.progress(10)
-            
-        elif status == "IN_PROGRESS":
-            duration = time.time() - start_time
-            status_text.text(f"AI Analyzing Market Data... ({int(duration)}s)")
-            # Fake progress for user feedback
-            prog = min(90, 10 + int(duration))
-            progress_bar.progress(prog)
-
 
 # Simple Builder + Command pattern to support batch predictions.
 class PredictionPayloadBuilder:
-    def __init__(self, prediction_date, n_weeks, use_basics):
+    def __init__(self, prediction_date, n_weeks, use_basics, week_mode="mon_fri_preopen"):
         self.prediction_date = prediction_date
         self.n_weeks = n_weeks
         self.use_basics = use_basics
+        self.week_mode = week_mode
 
     def build(self, ticker):
         return {
@@ -144,19 +128,22 @@ class PredictionPayloadBuilder:
                 "date": self.prediction_date.strftime("%Y-%m-%d"),
                 "n_weeks": self.n_weeks,
                 "use_basics": self.use_basics,
+                "week_mode": self.week_mode,
             }
         }
 
 
 class PredictionJob:
-    def __init__(self, ticker, payload_builder, headers):
+    def __init__(self, ticker, payload_builder, headers, base_url, label=""):
         self.ticker = ticker
         self.payload_builder = payload_builder
         self.headers = headers
+        self.base_url = base_url
+        self.label = label
 
     def execute(self):
         payload = self.payload_builder.build(self.ticker)
-        return run_prediction(payload, self.headers)
+        return run_prediction(payload, self.headers, self.base_url)
 
 
 class PredictionResultRepository:
@@ -948,6 +935,28 @@ def main():
         )
         
         st.markdown("---")
+        st.markdown("### ⚙️ RunPod Endpoints")
+        st.info("Fyll i dina Serverless Endpoint ID:n nedan för parallell körning.")
+        
+        default_mon_fri = "DITT_MON_FRI_ID"
+        default_fri_fri = "4fbwlg7yhbwu2u"
+        
+        try:
+            default_mon_fri = st.secrets.get("RUNPOD_ID_MON_FRI", default_mon_fri)
+            default_fri_fri = st.secrets.get("RUNPOD_ID_FRI_FRI", default_fri_fri)
+        except Exception:
+            pass
+            
+        runpod_id_mon_fri = st.text_input("Endpoint ID (Mån-Fre)", value=default_mon_fri)
+        runpod_id_fri_fri = st.text_input("Endpoint ID (Fre-Fre)", value=default_fri_fri)
+        
+        run_mode = st.radio(
+            "Välj Körläge",
+            options=["Endast Mån-Fre", "Endast Fre-Fre", "Kör båda parallellt!"],
+            index=2
+        )
+
+        st.markdown("---")
         st.markdown("### About")
         st.info(
             """
@@ -980,7 +989,6 @@ def main():
             return
 
         with st.container():
-            payload_builder = PredictionPayloadBuilder(prediction_date, n_weeks, use_basics)
             result_repository = PredictionResultRepository(RESULTS_DIR)
             job_runner = PredictionJobRunner(RetryPolicy())
             text_parser = PredictionTextParser()
@@ -989,66 +997,96 @@ def main():
                 "Content-Type": "application/json"
             }
 
-            jobs = [PredictionJob(ticker, payload_builder, headers) for ticker in tickers]
+            endpoints = []
+            if run_mode in ["Endast Mån-Fre", "Kör båda parallellt!"]:
+                if runpod_id_mon_fri and runpod_id_mon_fri != "DITT_MON_FRI_ID":
+                    endpoints.append((f"https://api.runpod.ai/v2/{runpod_id_mon_fri}", "Mån-Fre", "mon_fri_preopen"))
+                else:
+                    st.warning("Saknar giltigt Endpoint ID för Mån-Fre!")
+            if run_mode in ["Endast Fre-Fre", "Kör båda parallellt!"]:
+                if runpod_id_fri_fri and runpod_id_fri_fri != "DITT_FRI_FRI_ID":
+                    endpoints.append((f"https://api.runpod.ai/v2/{runpod_id_fri_fri}", "Fre-Fre", "fri_fri"))
+                else:
+                    st.warning("Saknar giltigt Endpoint ID för Fre-Fre!")
+
+            if not endpoints:
+                st.error("Inga giltiga endpoints konfigurerade. Avbryter.")
+                return
+
+            jobs = []
+            for ticker in tickers:
+                for base_url, label, week_mode in endpoints:
+                    payload_builder = PredictionPayloadBuilder(prediction_date, n_weeks, use_basics, week_mode=week_mode)
+                    jobs.append(PredictionJob(ticker, payload_builder, headers, base_url, label))
+
             st.session_state["prediction_results"] = []
             st.session_state["prediction_errors"] = []
             prediction_date_str = prediction_date.strftime("%Y-%m-%d")
             saved_path = None
             save_error = None
+            
             overall_progress = st.progress(0)
             overall_status = st.empty()
 
-            for idx, job in enumerate(jobs):
-                if idx > 0:
-                    st.markdown("---")
+            completed_jobs = 0
+            total_jobs = len(jobs)
+            overall_status.text(f"Startar {total_jobs} AI-analyser parallellt...")
 
-                overall_status.text(f"Running {idx + 1}/{len(jobs)}: {job.ticker}")
-                result = job_runner.run(job)
-                overall_progress.progress(int(((idx + 1) / len(jobs)) * 100))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+                future_to_job = {executor.submit(job_runner.run, job): job for job in jobs}
+                
+                for future in concurrent.futures.as_completed(future_to_job):
+                    job = future_to_job[future]
+                    completed_jobs += 1
+                    overall_progress.progress(int((completed_jobs / total_jobs) * 100))
+                    overall_status.text(f"Färdigställer analys {completed_jobs}/{total_jobs} ({job.ticker} - {job.label})")
+                    
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        result = {"error": str(exc)}
+                    
+                    if "error" in result:
+                        error_message = result["error"]
+                        st.session_state["prediction_errors"].append({
+                            "ticker": f"{job.ticker} ({job.label})",
+                            "error": error_message,
+                        })
+                        st.error(f"❌ {job.ticker} ({job.label}): {error_message}")
+                        if "details" in result:
+                            st.json(result["details"])
+                        continue
 
-                if "error" in result:
-                    error_message = result["error"]
-                    st.session_state["prediction_errors"].append({
-                        "ticker": job.ticker,
-                        "error": error_message,
+                    output = result.get("output", result)
+                    if isinstance(output, dict) and "error" in output:
+                        st.error(f"❌ Model Error ({job.label}): {output['error']}")
+                        continue
+
+                    raw_text = output.get("prediction", "No prediction text returned.")
+                    resolved_ticker = output.get("ticker", job.ticker)
+                    resolved_date = output.get("date", prediction_date_str)
+                    confidence_level = text_parser.extract_confidence_level(raw_text)
+
+                    st.session_state["prediction_results"].append({
+                        "ticker": f"{resolved_ticker} [{job.label}]",
+                        "date": resolved_date,
+                        "prediction": raw_text,
+                        "confidence_level": confidence_level,
+                        "raw_result": result
                     })
-                    st.error(f"❌ {job.ticker}: {error_message}")
-                    if "details" in result:
-                        st.json(result["details"])
-                    continue
 
-                output = result.get("output", result)
-
-                # Check for internal error in output
-                if isinstance(output, dict) and "error" in output:
-                    st.error(f"❌ Model Error: {output['error']}")
-                    continue
-
-                raw_text = output.get("prediction", "No prediction text returned.")
-                resolved_ticker = output.get("ticker", job.ticker)
-                resolved_date = output.get("date", prediction_date_str)
-                confidence_level = text_parser.extract_confidence_level(raw_text)
-
-                st.session_state["prediction_results"].append({
-                    "ticker": resolved_ticker,
-                    "date": resolved_date,
-                    "prediction": raw_text,
-                    "confidence_level": confidence_level,
-                    "raw_result": result
-                })
-
-                saved_path, save_error = result_repository.append(
-                    prediction_date=resolved_date,
-                    ticker=resolved_ticker,
-                    prediction_text=raw_text,
-                    confidence_level=confidence_level,
-                )
+                    saved_path, save_error = result_repository.append(
+                        prediction_date=f"{resolved_date}_{job.label.replace(' ', '_')}",
+                        ticker=resolved_ticker,
+                        prediction_text=raw_text,
+                        confidence_level=confidence_level,
+                    )
 
             if save_error:
-                st.warning(f"Could not save results to disk: {save_error}")
+                st.warning(f"Could not spara resultat på disk: {save_error}")
             elif saved_path and st.session_state["prediction_results"]:
                 st.success(
-                    f"Saved {len(st.session_state['prediction_results'])} predictions to {saved_path}"
+                    f"Sparade {len(st.session_state['prediction_results'])} predictions till results-mappen."
                 )
 
     # Always allow on‑demand price comparison between two arbitrary dates.
