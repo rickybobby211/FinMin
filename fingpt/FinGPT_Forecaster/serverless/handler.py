@@ -975,7 +975,8 @@ def handler(event):
         response = {
             "ticker": ticker.upper(),
             "date": prediction_date or date.today().strftime("%Y-%m-%d"),
-            "prediction": prediction
+            "prediction": prediction,
+            "adapter_used": ADAPTER_ID
         }
         if _env_flag(INCLUDE_PROMPT_IN_RESPONSE):
             response["prompt"] = prompt

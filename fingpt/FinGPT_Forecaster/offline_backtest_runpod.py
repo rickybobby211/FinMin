@@ -291,6 +291,7 @@ def main():
             continue
             
         prediction_text = output.get("prediction", "")
+        adapter_used = output.get("adapter_used", "UNKNOWN")
         full_prompt = output.get("prompt", "")
         predicted_dir = parse_prediction(prediction_text)
         
@@ -311,7 +312,7 @@ def main():
             
         actual_display = actual_dir if actual_dir is not None else "UNKNOWN"
         pct_display = f"{pct_change:.2f}%" if pct_change is not None else "N/A"
-        print(f" Pred: {predicted_dir} | Act: {actual_display} ({pct_display}) {mark}{news_status}")
+        print(f" Pred: {predicted_dir} | Act: {actual_display} ({pct_display}) {mark} | Adapter: {adapter_used}{news_status}")
         
         results.append({
             "date": test_date,
@@ -322,6 +323,7 @@ def main():
             "end_price": end_price,
             "correct": is_correct,
             "has_news": has_news,
+            "adapter": adapter_used,
             "full_text": prediction_text,
             "prompt_input": json.dumps(payload),
             "full_prompt": full_prompt

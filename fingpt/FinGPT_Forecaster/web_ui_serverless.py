@@ -151,7 +151,7 @@ class PredictionResultRepository:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def append(self, prediction_date, ticker, prediction_text, confidence_level):
+    def append(self, prediction_date, ticker, prediction_text, confidence_level, adapter="UNKNOWN"):
         file_path = self.base_dir / f"predictions_{prediction_date}.csv"
         is_new_file = not file_path.exists()
 
@@ -159,8 +159,8 @@ class PredictionResultRepository:
             with file_path.open("a", newline="", encoding="utf-8") as file_handle:
                 writer = csv.writer(file_handle)
                 if is_new_file:
-                    writer.writerow(["prediction", "ticker", "date", "confidence_level"])
-                writer.writerow([prediction_text, ticker, prediction_date, confidence_level])
+                    writer.writerow(["prediction", "ticker", "date", "confidence_level", "adapter"])
+                writer.writerow([prediction_text, ticker, prediction_date, confidence_level, adapter])
             return file_path, None
         except OSError as exc:
             return file_path, str(exc)
@@ -952,8 +952,8 @@ def main():
         
         run_mode = st.radio(
             "Välj Körläge",
-            options=["Endast Mån-Fre", "Endast Fre-Fre", "Kör båda parallellt!"],
-            index=2
+            options=["Endast Mån-Fre", "Endast Fre-Fre"],
+            index=1
         )
 
         st.markdown("---")
@@ -976,7 +976,9 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        generate_btn = st.button("🚀 Generate Analysis", type="primary", use_container_width=True)
+        st.info(f"📅 **Valt datum:** {prediction_date.strftime('%Y-%m-%d')} | 🔍 **Horisont:** {n_weeks} veckor")
+        confirm_settings = st.checkbox("Jag bekräftar att jag har valt rätt datum och rätt horisont för analysen.")
+        generate_btn = st.button("🚀 Generate Analysis", type="primary", use_container_width=True, disabled=not confirm_settings)
 
     if "prediction_results" not in st.session_state:
         st.session_state["prediction_results"] = []
@@ -1065,11 +1067,13 @@ def main():
                     raw_text = output.get("prediction", "No prediction text returned.")
                     resolved_ticker = output.get("ticker", job.ticker)
                     resolved_date = output.get("date", prediction_date_str)
+                    adapter_used = output.get("adapter_used", "UNKNOWN")
                     confidence_level = text_parser.extract_confidence_level(raw_text)
 
                     st.session_state["prediction_results"].append({
                         "ticker": f"{resolved_ticker} [{job.label}]",
                         "date": resolved_date,
+                        "adapter": adapter_used,
                         "prediction": raw_text,
                         "confidence_level": confidence_level,
                         "raw_result": result
@@ -1080,6 +1084,7 @@ def main():
                         ticker=resolved_ticker,
                         prediction_text=raw_text,
                         confidence_level=confidence_level,
+                        adapter=adapter_used,
                     )
 
             if save_error:
@@ -1104,7 +1109,7 @@ def main():
 
         csv_buffer = io.StringIO()
         csv_writer = csv.writer(csv_buffer)
-        csv_writer.writerow(["prediction", "ticker", "date", "confidence_level"])
+        csv_writer.writerow(["prediction", "ticker", "date", "confidence_level", "adapter"])
 
         for item in st.session_state["prediction_results"]:
             csv_writer.writerow(
@@ -1113,10 +1118,13 @@ def main():
                     item["ticker"],
                     item["date"],
                     item.get("confidence_level", ""),
+                    item.get("adapter", "UNKNOWN"),
                 ]
             )
             st.subheader(f"📊 Analysis for {item['ticker']}")
             st.caption(f"Target Week: {item['date']}")
+            if item.get("adapter") and item.get("adapter") != "UNKNOWN":
+                st.caption(f"Adapter: {item['adapter']}")
             if item.get("confidence_level"):
                 st.caption(f"Confidence Level: {item['confidence_level']}")
 
