@@ -244,6 +244,7 @@ def main():
     parser.add_argument("--start", type=str, required=True, help="Start Date (YYYY-MM-DD)")
     parser.add_argument("--weeks", type=int, default=10, help="Number of weeks to test")
     parser.add_argument("--history_weeks", type=int, default=3, help="Weeks of history in prompt (reduce if truncation occurs)")
+    parser.add_argument("--temperature", type=float, default=0.7, help="Generation temperature")
     parser.add_argument("--api_key", type=str, default=DEFAULT_API_KEY, help="RunPod API Key")
     parser.add_argument("--api_id", type=str, default=DEFAULT_RUNPOD_API_ID, help="RunPod Endpoint ID")
     
@@ -280,7 +281,8 @@ def main():
                 "ticker": args.ticker,
                 "date": test_date,
                 "n_weeks": args.history_weeks,
-                "use_basics": True
+                "use_basics": True,
+                "temperature": args.temperature
             }
         }
         

@@ -115,11 +115,12 @@ def run_prediction(payload, headers, base_url):
 
 # Simple Builder + Command pattern to support batch predictions.
 class PredictionPayloadBuilder:
-    def __init__(self, prediction_date, n_weeks, use_basics, week_mode="mon_fri_preopen"):
+    def __init__(self, prediction_date, n_weeks, use_basics, week_mode="mon_fri_preopen", temperature=0.7):
         self.prediction_date = prediction_date
         self.n_weeks = n_weeks
         self.use_basics = use_basics
         self.week_mode = week_mode
+        self.temperature = temperature
 
     def build(self, ticker):
         return {
@@ -129,6 +130,7 @@ class PredictionPayloadBuilder:
                 "n_weeks": self.n_weeks,
                 "use_basics": self.use_basics,
                 "week_mode": self.week_mode,
+                "temperature": self.temperature,
             }
         }
 
@@ -928,6 +930,15 @@ def main():
             help="Number of past weeks of news/price data to analyze"
         )
         
+        temperature = st.slider(
+            "Temperature", 
+            min_value=0.0, 
+            max_value=1.0, 
+            value=0.7, 
+            step=0.1,
+            help="Higher values make the output more random, lower values make it more deterministic."
+        )
+        
         use_basics = st.checkbox(
             "Use Latest Basic Financials",
             value=True,
@@ -1018,7 +1029,7 @@ def main():
             jobs = []
             for ticker in tickers:
                 for base_url, label, week_mode in endpoints:
-                    payload_builder = PredictionPayloadBuilder(prediction_date, n_weeks, use_basics, week_mode=week_mode)
+                    payload_builder = PredictionPayloadBuilder(prediction_date, n_weeks, use_basics, week_mode=week_mode, temperature=temperature)
                     jobs.append(PredictionJob(ticker, payload_builder, headers, base_url, label))
 
             st.session_state["prediction_results"] = []

@@ -38,8 +38,6 @@ MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
 ADAPTER_ID = os.environ.get("ADAPTER_PATH")
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "32768"))
 MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "512"))
-DEFAULT_TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.7"))
-print(f"--- GENERATION: Using temperature={DEFAULT_TEMPERATURE}", flush=True)
 ANSWER_START_MARKER = "### ANSWER START"
 INCLUDE_PROMPT_IN_RESPONSE = os.environ.get("INCLUDE_PROMPT_IN_RESPONSE", "0")
 TECH_STOCKS = {"AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"}
@@ -801,14 +799,14 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals
 # INFERENCE
 # ============================================================================
 
-def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_signals=True):
+def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_signals=True, temperature=0.7):
     """Generate stock prediction."""
     load_model()  # Ensure model is loaded
     
     if prediction_date is None:
         prediction_date = date.today().strftime("%Y-%m-%d")
     
-    config = _build_generation_config()
+    config = _build_generation_config(temperature)
     prompt = construct_prompt(ticker, prediction_date, n_weeks, use_basics, use_quant_signals)
 
     inputs = tokenizer(prompt, return_tensors='pt', padding=False)
@@ -844,11 +842,11 @@ class GenerationConfig:
     temperature: float
 
 
-def _build_generation_config():
+def _build_generation_config(temperature):
     return GenerationConfig(
         max_new_tokens=DEFAULT_MAX_NEW_TOKENS,
         min_completion_tokens=MIN_COMPLETION_TOKENS,
-        temperature=DEFAULT_TEMPERATURE,
+        temperature=float(temperature),
     )
 
 
@@ -963,13 +961,18 @@ def handler(event):
         use_basics = input_data.get("use_basics", True)
         use_quant_signals = input_data.get("use_quant_signals", True)
         
+        temperature = input_data.get("temperature")
+        if temperature is None:
+            return {"error": "Missing required field: temperature"}
+        
         # Generate prediction
         prediction, prompt = predict(
             ticker=ticker.upper(),
             prediction_date=prediction_date,
             n_weeks=n_weeks,
             use_basics=use_basics,
-            use_quant_signals=use_quant_signals
+            use_quant_signals=use_quant_signals,
+            temperature=temperature
         )
         
         response = {
