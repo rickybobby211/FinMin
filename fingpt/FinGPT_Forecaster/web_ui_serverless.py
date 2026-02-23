@@ -949,7 +949,7 @@ def main():
         st.markdown("### ⚙️ RunPod Endpoints")
         st.info("Fyll i dina Serverless Endpoint ID:n nedan för parallell körning.")
         
-        default_mon_fri = "DITT_MON_FRI_ID"
+        default_mon_fri = "lk1a8la6j92ey9"
         default_fri_fri = "4fbwlg7yhbwu2u"
         
         try:

@@ -375,18 +375,29 @@ def get_stock_data(stock_symbol, steps):
     if len(stock_data) == 0:
         raise ValueError(f"No stock data found for {stock_symbol}")
     
+    if isinstance(stock_data.columns, pd.MultiIndex):
+        try:
+            stock_data = stock_data.droplevel(1, axis=1)
+        except Exception:
+            pass
+
     dates, prices = [], []
     available_dates = stock_data.index.strftime('%Y-%m-%d').tolist()
+    
+    def _to_float(val):
+        if hasattr(val, "iloc"):
+            return float(val.iloc[0])
+        return float(val)
     
     for step_date in steps[:-1]:
         for i, avail_date in enumerate(available_dates):
             if avail_date >= step_date:
-                prices.append(float(stock_data['Close'].iloc[i]))
+                prices.append(_to_float(stock_data['Close'].iloc[i]))
                 dates.append(datetime.strptime(avail_date, "%Y-%m-%d"))
                 break
     
     dates.append(datetime.strptime(available_dates[-1], "%Y-%m-%d"))
-    prices.append(float(stock_data['Close'].iloc[-1]))
+    prices.append(_to_float(stock_data['Close'].iloc[-1]))
     
     return pd.DataFrame({
         "Start Date": dates[:-1], "End Date": dates[1:],
@@ -626,6 +637,7 @@ class PromptContext:
     market_name: str
     use_basics: bool
     use_quant_signals: bool
+    week_mode: str
 
 
 class PromptBuilder:
@@ -677,7 +689,14 @@ class PromptBuilder:
         return self
 
     def add_instruction(self):
-        period = f"{self.context.curday} to {n_weeks_before(self.context.curday, -1)}"
+        curday_dt = datetime.strptime(self.context.curday, "%Y-%m-%d")
+        if self.context.week_mode in ["mon_fri", "mon_fri_preopen"]:
+            end_dt = curday_dt + timedelta(days=4)
+        else:
+            end_dt = curday_dt + timedelta(days=7)
+        end_date_str = end_dt.strftime("%Y-%m-%d")
+        period = f"{self.context.curday} to {end_date_str}"
+        
         instruction = (
             f"Based on all the information before {self.context.curday}, let's first analyze the "
             f"positive developments and potential concerns for {self.context.ticker}. Come up with "
@@ -759,7 +778,7 @@ def _build_quant_signals_block(ticker: str, row: pd.Series, market_symbol: str, 
     return head
 
 
-def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals=True):
+def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals=True, week_mode="fri_fri"):
     """Build the full prompt for the model."""
     steps = [n_weeks_before(curday, n) for n in range(n_weeks + 1)][::-1]
 
@@ -780,6 +799,7 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals
         market_name=market_name,
         use_basics=use_basics,
         use_quant_signals=use_quant_signals,
+        week_mode=week_mode,
     )
 
     prompt = (
@@ -799,7 +819,7 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals
 # INFERENCE
 # ============================================================================
 
-def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_signals=True, temperature=0.7):
+def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_signals=True, week_mode="fri_fri", temperature=0.7):
     """Generate stock prediction."""
     load_model()  # Ensure model is loaded
     
@@ -807,7 +827,7 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
         prediction_date = date.today().strftime("%Y-%m-%d")
     
     config = _build_generation_config(temperature)
-    prompt = construct_prompt(ticker, prediction_date, n_weeks, use_basics, use_quant_signals)
+    prompt = construct_prompt(ticker, prediction_date, n_weeks, use_basics, use_quant_signals, week_mode)
 
     inputs = tokenizer(prompt, return_tensors='pt', padding=False)
     input_len = inputs["input_ids"].shape[-1]
@@ -960,6 +980,7 @@ def handler(event):
         n_weeks = input_data.get("n_weeks", 3)
         use_basics = input_data.get("use_basics", True)
         use_quant_signals = input_data.get("use_quant_signals", True)
+        week_mode = input_data.get("week_mode", "fri_fri")
         
         temperature = input_data.get("temperature")
         if temperature is None:
@@ -972,6 +993,7 @@ def handler(event):
             n_weeks=n_weeks,
             use_basics=use_basics,
             use_quant_signals=use_quant_signals,
+            week_mode=week_mode,
             temperature=temperature
         )
         
