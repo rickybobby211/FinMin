@@ -784,14 +784,16 @@ def render_price_comparison_section():
             key="compare_date_b",
         )
 
-    uploaded_prediction_csv = st.file_uploader(
-        "Ladda upp predictions CSV (från parse_prediction.py)",
+    uploaded_prediction_csvs = st.file_uploader(
+        "Ladda upp en eller flera predictions CSV (från parse_prediction.py)",
         type=["csv"],
         help=(
             "CSV med kolumner som ticker, date, move, confidence, text. "
-            "Den används för att jämföra prediction mot faktisk kursrörelse."
+            "Första filen visas med fler prediction-kolumner. "
+            "Övriga filer visas endast med kolumn för rätt riktning."
         ),
         key="prediction_compare_upload",
+        accept_multiple_files=True,
     )
 
     compare_btn = st.button(
@@ -822,27 +824,36 @@ def render_price_comparison_section():
         st.info("Hittade ingen kursdata för angivna inställningar.")
         return
 
-    parser = PredictionCsvParser()
-    prediction_rows, parse_error = parser.parse(uploaded_prediction_csv)
-    if uploaded_prediction_csv is not None and parser.last_debug_info is not None:
-        with st.expander("CSV debug (delimiter + headers)", expanded=False):
-            debug_info = parser.last_debug_info
-            st.write(
-                f"Primary delimiter: `{debug_info.get('primary_delimiter')}` | "
-                f"Selected delimiter: `{debug_info.get('selected_delimiter')}`"
-            )
-            st.write(
-                "Headers: "
-                + ", ".join(debug_info.get("normalized_headers", []))
-                if debug_info.get("normalized_headers")
-                else "Headers: (inga)"
-            )
-            st.json(debug_info)
-    if parse_error:
-        st.warning(parse_error)
-
     prediction_compare_service = PredictionComparisonService()
-    prediction_index = prediction_compare_service.build_prediction_index(prediction_rows)
+    uploaded_prediction_csvs = uploaded_prediction_csvs or []
+    prediction_indices: list[tuple[str, dict[str, UploadedPrediction]]] = []
+
+    for idx, uploaded_prediction_csv in enumerate(uploaded_prediction_csvs):
+        parser = PredictionCsvParser()
+        prediction_rows, parse_error = parser.parse(uploaded_prediction_csv)
+        file_label = uploaded_prediction_csv.name if hasattr(uploaded_prediction_csv, "name") else f"Fil {idx + 1}"
+
+        if parser.last_debug_info is not None:
+            with st.expander(f"CSV debug (delimiter + headers) — {file_label}", expanded=False):
+                debug_info = parser.last_debug_info
+                st.write(
+                    f"Primary delimiter: `{debug_info.get('primary_delimiter')}` | "
+                    f"Selected delimiter: `{debug_info.get('selected_delimiter')}`"
+                )
+                st.write(
+                    "Headers: "
+                    + ", ".join(debug_info.get("normalized_headers", []))
+                    if debug_info.get("normalized_headers")
+                    else "Headers: (inga)"
+                )
+                st.json(debug_info)
+
+        if parse_error:
+            st.warning(f"{file_label}: {parse_error}")
+            continue
+
+        prediction_index = prediction_compare_service.build_prediction_index(prediction_rows)
+        prediction_indices.append((file_label, prediction_index))
 
     table_rows = []
     for r in results:
@@ -851,34 +862,51 @@ def render_price_comparison_section():
         else:
             status = ""
 
-        prediction_row = prediction_index.get(r.ticker)
         actual_direction = prediction_compare_service.resolve_actual_direction(r.pct_change)
-        predicted_direction = prediction_row.direction if prediction_row else None
 
-        table_rows.append(
-            {
-                "Ticker": r.ticker,
-                "Datum A": r.date_a.strftime("%Y-%m-%d"),
-                "Pris A": f"{r.price_a:.2f}" if r.price_a is not None else "-",
-                "Datum B": r.date_b.strftime("%Y-%m-%d"),
-                "Pris B": f"{r.price_b:.2f}" if r.price_b is not None else "-",
-                "Förändring": (
-                    f"{r.abs_change:.2f}" if r.abs_change is not None else "-"
-                ),
-                "Förändring %": (
-                    f"{r.pct_change:.2f}%" if r.pct_change is not None else "-"
-                ),
-                "Status": status,
-                "Prediction Move": prediction_row.move if prediction_row else "-",
-                "Confidence Level": prediction_row.confidence if prediction_row else "-",
-                "Pred. Riktning": predicted_direction or "-",
-                "Faktisk Riktning": actual_direction or "-",
-                "Rätt Riktning": prediction_compare_service.direction_match(
-                    predicted_direction,
-                    actual_direction,
-                ),
-            }
-        )
+        base_row = {
+            "Ticker": r.ticker,
+            "Datum A": r.date_a.strftime("%Y-%m-%d"),
+            "Pris A": f"{r.price_a:.2f}" if r.price_a is not None else "-",
+            "Datum B": r.date_b.strftime("%Y-%m-%d"),
+            "Pris B": f"{r.price_b:.2f}" if r.price_b is not None else "-",
+            "Förändring": (
+                f"{r.abs_change:.2f}" if r.abs_change is not None else "-"
+            ),
+            "Förändring %": (
+                f"{r.pct_change:.2f}%" if r.pct_change is not None else "-"
+            ),
+            "Status": status,
+            "Faktisk Riktning": actual_direction or "-",
+        }
+
+        if prediction_indices:
+            _first_file_label, first_prediction_index = prediction_indices[0]
+            first_prediction_row = first_prediction_index.get(r.ticker)
+            first_predicted_direction = (
+                first_prediction_row.direction if first_prediction_row else None
+            )
+            base_row["Prediction Move"] = first_prediction_row.move if first_prediction_row else "-"
+            base_row["Confidence Level"] = (
+                first_prediction_row.confidence if first_prediction_row else "-"
+            )
+            base_row["Pred. Riktning"] = first_predicted_direction or "-"
+            base_row["Rätt Riktning"] = prediction_compare_service.direction_match(
+                first_predicted_direction,
+                actual_direction,
+            )
+
+            for extra_idx, (file_label, prediction_index) in enumerate(prediction_indices[1:], start=2):
+                prediction_row = prediction_index.get(r.ticker)
+                predicted_direction = prediction_row.direction if prediction_row else None
+                base_row[f"Rätt Riktning (Fil {extra_idx}: {file_label})"] = (
+                    prediction_compare_service.direction_match(
+                        predicted_direction,
+                        actual_direction,
+                    )
+                )
+
+        table_rows.append(base_row)
 
     try:
         import pandas as pd
@@ -892,11 +920,19 @@ def render_price_comparison_section():
                 return "background-color: #f8d7da; color: #721c24; font-weight: 600;"
             return "background-color: #f1f3f5; color: #6c757d;"
 
-        # Fokus pa riktningstraff: gron vid ratt hall, rod vid fel.
-        styled_dataframe = dataframe.style.map(
-            highlight_direction_match,
-            subset=["Rätt Riktning"],
-        )
+        direction_match_columns = [
+            column_name
+            for column_name in dataframe.columns
+            if column_name.startswith("Rätt Riktning")
+        ]
+        if direction_match_columns:
+            # Fokus pa riktningstraff: gron vid ratt hall, rod vid fel.
+            styled_dataframe = dataframe.style.map(
+                highlight_direction_match,
+                subset=direction_match_columns,
+            )
+        else:
+            styled_dataframe = dataframe.style
         st.dataframe(styled_dataframe, use_container_width=True, hide_index=True)
     except Exception:
         st.dataframe(table_rows, use_container_width=True, hide_index=True)
