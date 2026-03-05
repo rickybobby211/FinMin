@@ -42,7 +42,7 @@ from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from tqdm import tqdm  # Better progress bars
 
 # ============================================================================
@@ -312,6 +312,31 @@ Follow this analytical hierarchy:
 """
 
 
+def append_empty_reason_log(
+    log_file: Optional[str],
+    symbol: str,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    model: str,
+    reason: str,
+    candidates: int,
+) -> None:
+    """Append empty-selection reason as JSONL for later reruns/debugging."""
+    if not log_file:
+        return
+    payload = {
+        "timestamp_utc": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "symbol": symbol,
+        "start_date": start_date,
+        "end_date": end_date,
+        "model": model,
+        "candidates": candidates,
+        "reason": reason,
+    }
+    with open(log_file, mode="a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
 # ============================================================================
 # PROMPT GENERATION FUNCTIONS
 # ============================================================================
@@ -502,6 +527,31 @@ def _score_news_item(item: dict, end_date: Optional[str]) -> tuple:
     return (recency_score, keyword_score + info_len)
 
 
+def _normalize_news_text(text: str) -> str:
+    text = (text or "").lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _signal_tokens(item: dict) -> set[str]:
+    text = f"{item.get('headline', '')} {item.get('summary', '')}"
+    tokens = _normalize_news_text(text).split()
+    generic = {
+        "stock", "stocks", "shares", "market", "markets", "today", "week",
+        "company", "business", "update", "report",
+    }
+    return {tok for tok in tokens if len(tok) >= 5 and tok not in generic}
+
+
+def _same_incident_light(left: dict, right: dict) -> bool:
+    left_day = str(left.get("date", ""))[:8]
+    right_day = str(right.get("date", ""))[:8]
+    if left_day and right_day and left_day != right_day:
+        return False
+    shared = _signal_tokens(left) & _signal_tokens(right)
+    return len(shared) >= 2
+
+
 def rank_news_by_relevance(news: list, end_date: Optional[str]) -> list:
     """Return news sorted by heuristic relevance (recency + info richness)."""
     valid_news = [n for n in news if isinstance(n, dict)]
@@ -510,7 +560,8 @@ def rank_news_by_relevance(news: list, end_date: Optional[str]) -> list:
 
 def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str,
                        stock_return: float = 0.0, market_return: float = 0.0, market_name: str = "Market",
-                       alpha: float = 0.0, vol_z: float = 0.0) -> list:
+                       alpha: float = 0.0, vol_z: float = 0.0,
+                       period_start_date: Optional[str] = None, period_end_date: Optional[str] = None) -> list:
     """
     Use LLM to select the most impactful news for a specific stock.
     Includes price movement context (facit) to help the LLM find explaining news.
@@ -525,44 +576,92 @@ def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str,
     # [OBSOLETE] Pre-rank 200 limit removed to rely on pre-filtering or LLM context capacity.
     # If list is enormous without pre-filtering, DeepSeek can handle ~64k context.
 
+    cluster_representatives = []
+    cluster_ids = []
+    for idx, item in enumerate(valid_news):
+        assigned_cluster = None
+        for cluster_idx, rep_idx in enumerate(cluster_representatives):
+            if _same_incident_light(item, valid_news[rep_idx]):
+                assigned_cluster = cluster_idx
+                break
+        if assigned_cluster is None:
+            cluster_representatives.append(idx)
+            assigned_cluster = len(cluster_representatives) - 1
+        cluster_ids.append(assigned_cluster)
+
+    def _format_date_with_weekday(raw_date: str) -> str:
+        """Format date like 'Monday 2026-02-23 14:30' when possible."""
+        try:
+            if len(raw_date) >= 14:
+                dt = datetime.strptime(raw_date[:14], "%Y%m%d%H%M%S")
+            elif len(raw_date) >= 8:
+                dt = datetime.strptime(raw_date[:8], "%Y%m%d")
+            else:
+                return raw_date
+            return dt.strftime("%A %Y-%m-%d %H:%M")
+        except Exception:
+            return raw_date
+
+    id_to_idx = {}
     for i, n in enumerate(valid_news):
         headline = n.get('headline', 'No Headline')
         summary = n.get('summary', 'No Summary')
-        date = n.get('date', 'Unknown Date')
-        news_text += f"ID {i}: [{date}] {headline} - {summary}\\n"
+        date_raw = n.get('date', 'Unknown Date')
+        date_fmt = _format_date_with_weekday(date_raw)
+        source = n.get('source', 'Unknown Source')
+        news_type = n.get('news_type', 'unknown')
+        cluster = f"C{cluster_ids[i]}"
+        raw_id = n.get("id")
+        if isinstance(raw_id, int):
+            external_id = str(raw_id)
+        else:
+            external_id = f"IDX_{i}"
+        id_to_idx[external_id] = i
+        news_text += (
+            f"GLOBAL_ID={external_id} LOCAL_INDEX={i} [{date_fmt}] "
+            f"[type={news_type}] [source={source}] [cluster={cluster}] "
+            f"{headline} - {summary}\\n"
+        )
 
-    # Define scenario instruction dynamically
-    scenario_instruction = ""
-    
-    # Priority 1: Extreme Volume (Something big happened)
+    # Combine contexts (volume + alpha) instead of mutually exclusive branching.
+    contexts = []
     if vol_z is not None and vol_z > 2.0:
-        scenario_instruction = f"""
-CRITICAL CONTEXT: TRADING VOLUME WAS EXTREME (Z-Score: {vol_z:.1f}).
-Something significant happened. You MUST prioritize news about Earnings, M&A, FDA approvals, or major contracts.
-Ignore minor press releases. Focus on the catalyst for this volume."""
-    
-    # Priority 2: Significant Negative Alpha
-    elif alpha < -0.02:
-        scenario_instruction = f"""
-CONTEXT: The stock SIGNIFICANTLY UNDERPERFORMED the market (Alpha: {alpha*100:.2f}%).
-You must prioritize negative company-specific news (downgrades, lawsuits, missed earnings) that explains this drop.
-If the summary is generic, score it low."""
-
-    # Priority 3: Significant Positive Alpha
+        contexts.append(f"EXTREME VOLUME (Z-Score: {vol_z:.1f})")
+    if alpha < -0.02:
+        contexts.append(f"SIGNIFICANT UNDERPERFORMANCE (Alpha: {alpha*100:.2f}%)")
     elif alpha > 0.02:
-        scenario_instruction = f"""
-CONTEXT: The stock SIGNIFICANTLY OUTPERFORMED the market (Alpha: {alpha*100:.2f}%).
-You must prioritize positive company-specific catalysts (upgrades, partnerships, beats)."""
+        contexts.append(f"SIGNIFICANT OUTPERFORMANCE (Alpha: {alpha*100:.2f}%)")
 
-    # Priority 4: Normal/Boring week
+    context_header = " + ".join(contexts) if contexts else "NORMAL MARKET CONDITIONS"
+    scenario_lines = [f"CONTEXT: {context_header}"]
+    if alpha < -0.02:
+        scenario_lines.append(
+            "Task: Identify downside catalysts threatening the long-term business model "
+            "(disruption/obsolescence/structural pressure), not generic negativity."
+        )
+    elif alpha > 0.02:
+        scenario_lines.append(
+            "Task: Identify strong positive catalysts "
+            "(upgrades/partnerships/earnings beats/product traction)."
+        )
     else:
-        scenario_instruction = """
-CONTEXT: The stock moved in line with the market with normal volume.
-Do not try to force a narrative if no major news exists. Pick representative news items that reflect the general sentiment.
-It is acceptable to pick fewer items if nothing is relevant."""
+        scenario_lines.append(
+            "Task: If no major catalyst exists, choose representative context news instead of forced narratives."
+        )
+    if vol_z is not None and vol_z > 2.0:
+        scenario_lines.append(
+            "Priority: Find the specific trigger event behind the unusual trading volume."
+        )
+    scenario_instruction = "\n".join(scenario_lines)
 
     vol_z_str = f"{vol_z:.1f}" if vol_z is not None else "N/A"
+    week_scope = (
+        f"{period_start_date} to {period_end_date}"
+        if period_start_date and period_end_date
+        else "the provided period"
+    )
     system_prompt = f"""You are a financial analyst selecting news for {symbol}.
+You are analyzing news for the week of {week_scope}. Your goal is to explain price movement WITHIN THIS SPECIFIC WEEK.
 
 [MARKET DATA]
 - Return: {stock_return*100:.2f}%
@@ -572,10 +671,27 @@ It is acceptable to pick fewer items if nothing is relevant."""
 [INSTRUCTIONS]
 {scenario_instruction}
 
+[DIVERSITY & CAUSALITY RULES]
+- The goal is causal explanation, not headline popularity.
+- Deduplicate event clusters: if multiple items describe the same event, keep only the most information-dense one.
+- Prioritize causal chain in this order:
+  1) direct company catalysts, 2) precursor/warning signals, 3) sector/macro context.
+- For k={k}, use slot budget as default:
+  - company-specific: ~60% (about 3/5 when k=5)
+  - sector/peer context: ~20% (about 1/5)
+  - macro/policy context: ~20% (about 1/5)
+- If no strong company catalysts exist, reallocate to sector/macro.
+- If strong macro policy shock exists (e.g., tariffs/regulatory/geopolitics) and it can plausibly affect {symbol},
+  reserve at least one slot for it.
+- Prefer time-ordered evidence: precursor first, then catalyst, then consequence.
+
 [OUTPUT RULES]
-- Select up to {k} items.
+- Select exactly {k} items when at least {k} unique incidents exist; otherwise select all unique incidents.
+- Never return 2 IDs from the same cluster label Cx.
 - Assign a sentiment score (-1 to 1) relative to the stock price impact.
-- Return ONLY a JSON list: [{{"id": 0, "score": 0.8}}, ...]
+- Return a JSON list of objects, using GLOBAL_ID values from input.
+- Include a concise "reason" for each selected item.
+- Format strictly: [{{"id": "139187931", "score": -0.9, "reason": "COBOL disruption catalyst"}}, ...]
 """
 
     try:
@@ -586,7 +702,8 @@ It is acceptable to pick fewer items if nothing is relevant."""
                 {"role": "user", "content": news_text}
             ],
             temperature=0.0,
-            max_tokens=200
+            # Need enough room for k JSON objects with id+score+reason.
+            max_tokens=700
         )
         response = completion.choices[0].message.content.strip()
         
@@ -602,33 +719,50 @@ It is acceptable to pick fewer items if nothing is relevant."""
                 
             selected_items = json.loads(response)
             
-            # Helper to get ID and score safely
+            # Strict parsing: require object entries with id and score.
             result_news = []
+            used_ids = set()
+            used_clusters = set()
             for item in selected_items:
                 if isinstance(item, dict) and 'id' in item:
-                    idx = int(item['id'])
                     score = item.get('score', 0)
-                    if idx < len(valid_news):
-                        news_obj = valid_news[idx].copy()
-                        news_obj['sentiment_score'] = score
-                        result_news.append(news_obj)
-                elif isinstance(item, int): # Fallback if LLM returns simple list
-                    idx = item
-                    if idx < len(valid_news):
-                        result_news.append(valid_news[idx])
+                    reason = item.get("reason", "")
+                    raw_id = str(item['id']).strip()
+                    idx = None
+                    if raw_id in id_to_idx:
+                        idx = id_to_idx[raw_id]
+                    elif raw_id.isdigit() and raw_id in id_to_idx:
+                        idx = id_to_idx[raw_id]
+                    elif raw_id.startswith("IDX_") and raw_id[4:].isdigit():
+                        local_idx = int(raw_id[4:])
+                        if 0 <= local_idx < len(valid_news):
+                            idx = local_idx
+                    elif raw_id.isdigit():
+                        # Backward-compatible fallback if model still returns local index.
+                        local_idx = int(raw_id)
+                        if 0 <= local_idx < len(valid_news):
+                            idx = local_idx
+                    if idx is None or idx >= len(valid_news):
+                        continue
+                    score = item.get('score', 0)
+                    cluster_id = cluster_ids[idx]
+                    if idx in used_ids or cluster_id in used_clusters:
+                        continue
+                    news_obj = valid_news[idx].copy()
+                    news_obj['sentiment_score'] = score
+                    if isinstance(reason, str) and reason.strip():
+                        news_obj['selection_reason'] = reason.strip()
+                    result_news.append(news_obj)
+                    used_ids.add(idx)
+                    used_clusters.add(cluster_id)
 
             return result_news[:k]
             
-        except json.JSONDecodeError:
-            # Fallback to regex if JSON fails
-            import re
-            ids = [int(x) for x in re.findall(r'\d+', response)]
-            selected = [valid_news[i] for i in ids if i < len(valid_news)]
-            return selected[:k]
+        except json.JSONDecodeError as e:
+            raise RuntimeError("LLM response is not valid JSON in rank_news_with_llm.") from e
 
     except Exception as e:
-        # print(f"    LLM News Selection Failed: {e}. Falling back to relevance scoring.")
-        return rank_news_by_relevance(news, None)[:k]
+        raise RuntimeError(f"LLM ranking failed in rank_news_with_llm: {e}") from e
 
 
 def pre_filter_news(news: list, symbol: str, client, model: str) -> list:
@@ -730,7 +864,9 @@ def sample_news(news: list, k: int = 5, strategy: str = "relevant", end_date: Op
                 symbol: str = "", client = None, model: str = "",
                 stock_return: float = 0.0, market_return: float = 0.0, market_name: str = "Market",
                 alpha: float = 0.0, vol_z: float = 0.0,
-                pre_filter_client = None, pre_filter_model: str = "") -> list:
+                start_date: Optional[str] = None,
+                pre_filter_client = None, pre_filter_model: str = "",
+                empty_reason_log_file: Optional[str] = None) -> list:
     """
     Select up to k news items using a strategy:
     - "relevant": deterministic top-k by recency + information richness + keywords
@@ -750,7 +886,37 @@ def sample_news(news: list, k: int = 5, strategy: str = "relevant", end_date: Op
             target_news = pre_filter_news(news, symbol, pre_filter_client, pre_filter_model)
         
         # --- Stage 2: DeepSeek/Main LLM Selection (Original Logic) ---
-        return rank_news_with_llm(target_news, k, symbol, client, model, stock_return, market_return, market_name, alpha, vol_z)
+        try:
+            selected = rank_news_with_llm(
+                target_news, k, symbol, client, model, stock_return, market_return,
+                market_name, alpha, vol_z, period_start_date=start_date, period_end_date=end_date
+            )
+        except Exception as e:
+            append_empty_reason_log(
+                empty_reason_log_file,
+                symbol,
+                start_date,
+                end_date,
+                model,
+                f"LLM selection error: {e}",
+                candidates=len(target_news),
+            )
+            return []
+
+        if not selected:
+            append_empty_reason_log(
+                empty_reason_log_file,
+                symbol,
+                start_date,
+                end_date,
+                model,
+                (
+                    "LLM returned 0 selected items. This can be valid if no items are "
+                    "material for the week's move."
+                ),
+                candidates=len(target_news),
+            )
+        return selected
 
     ranked = rank_news_by_relevance(news, end_date)
     return ranked[:k]
@@ -858,6 +1024,7 @@ def get_all_prompts(
     tech_stocks = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"]
     market_symbol = "QQQ" if symbol in tech_stocks else "SPY"
     market_name = "Nasdaq-100" if market_symbol == "QQQ" else "S&P 500"
+    empty_reason_log_file = str(Path(data_dir) / "news_empty_reason_log.jsonl")
 
     # --- STEP 1: Pre-process all rows (Lightweight & Sequential) ---
     # We gather all technicals, basics, and raw news first without calling LLM.
@@ -929,6 +1096,7 @@ def get_all_prompts(
                 hist_row["news_raw"],
                 min(5, len(hist_row["news_raw"])),
                 strategy=news_strategy,
+                start_date=hist_row["start_date"],
                 end_date=hist_row["end_date"],
                 symbol=symbol,
                 client=client,
@@ -939,7 +1107,8 @@ def get_all_prompts(
                 alpha=hist_row["alpha"],
                 vol_z=hist_row["vol_z"],
                 pre_filter_client=pre_filter_client,
-                pre_filter_model=pre_filter_model
+                pre_filter_model=pre_filter_model,
+                empty_reason_log_file=empty_reason_log_file
             )
             
             formatted = format_news_items(sampled_news)
@@ -966,6 +1135,7 @@ def get_all_prompts(
                 weekend_news,
                 min(5, len(weekend_news)),
                 strategy=news_strategy,
+                start_date=p_row["start_date"],
                 end_date=p_row["start_date"],
                 symbol=symbol,
                 client=client,
@@ -976,7 +1146,8 @@ def get_all_prompts(
                 alpha=p_row["alpha"],
                 vol_z=p_row["vol_z"],
                 pre_filter_client=pre_filter_client,
-                pre_filter_model=pre_filter_model
+                pre_filter_model=pre_filter_model,
+                empty_reason_log_file=empty_reason_log_file
             )
             weekend_formatted = format_news_items(sampled_weekend)
             if weekend_formatted:
@@ -1156,7 +1327,7 @@ def query_llm(
     pre_filter_model: str = "",
     week_mode: str = "mon_fri_preopen",
     target_indices: Optional[set] = None
-):
+) -> Dict[str, Any]:
     """
     Query LLM to generate analysis for all prompts of a symbol.
     Supports OpenAI API or local Ollama.
@@ -1201,7 +1372,7 @@ def query_llm(
     )
     
     if not prompts:
-        return
+        return {"ok": True, "failed_prompts": 0, "total_prompts": 0, "error": ""}
     
     # Filter out already done prompts
     prompts_with_index = [
@@ -1215,15 +1386,17 @@ def query_llm(
     
     if remaining == 0:
         print(f"    {symbol} - Already complete!")
-        return
+        return {"ok": True, "failed_prompts": 0, "total_prompts": total, "error": ""}
     
     print(f"    Processing {remaining}/{total} prompts (parallel={parallel})")
 
+    failed_prompts = 0
     if parallel <= 1:
         # Sequential mode (original behavior)
         for prompt_data in tqdm(prompts_with_index, desc=f"    {symbol}", unit="prompt"):
-            index = prompt_data[0]
-            process_single_prompt(client, prompt_data, csv_file, model, backend, symbol, total)
+            _, success = process_single_prompt(client, prompt_data, csv_file, model, backend, symbol, total)
+            if not success:
+                failed_prompts += 1
     else:
         # PARALLEL MODE - Much faster!
         # completed = len(done_indices)
@@ -1238,13 +1411,22 @@ def query_llm(
             # Use tqdm for progress tracking
             for future in tqdm(as_completed(futures), total=len(futures), desc=f"    {symbol} (Parallel)", unit="prompt"):
                 try:
-                    result_index, success = future.result()
+                    _, success = future.result()
+                    if not success:
+                        failed_prompts += 1
                     # status = "✓" if success else "✗"
                     # print(f"    {symbol} - {completed}/{total} {status}", end='\\r')
                 except Exception as e:
                     print(f"\\n    Error processing {symbol}: {e}")
+                    failed_prompts += 1
     
     print(f"    {symbol} - Complete!                    ")
+    return {
+        "ok": failed_prompts == 0,
+        "failed_prompts": failed_prompts,
+        "total_prompts": total,
+        "error": "",
+    }
 
 
 # ============================================================================
@@ -1398,22 +1580,51 @@ def main():
     print(f"Week Mode: {args.week_mode}")
     print("=" * 60)
     
+    failed_symbols: List[str] = []
+    failed_details: List[str] = []
     for symbol in sorted(symbols):
         print(f"\\nProcessing {symbol}...")
         target_indices = only_indices_map.get(symbol)
-        query_llm(
-            openai_client, finnhub_client, symbol, args.data_dir,
-            args.min_weeks, args.max_weeks, with_basics, args.model, args.backend,
-            args.parallel, args.news_strategy,
-            pre_filter_client=pre_filter_client,
-            pre_filter_model=pre_filter_model,
-            week_mode=args.week_mode,
-            target_indices=target_indices
-        )
+        try:
+            result = query_llm(
+                openai_client, finnhub_client, symbol, args.data_dir,
+                args.min_weeks, args.max_weeks, with_basics, args.model, args.backend,
+                args.parallel, args.news_strategy,
+                pre_filter_client=pre_filter_client,
+                pre_filter_model=pre_filter_model,
+                week_mode=args.week_mode,
+                target_indices=target_indices
+            )
+            if result.get("failed_prompts", 0) > 0:
+                failed_symbols.append(symbol)
+                failed_details.append(
+                    f"{symbol}: failed_prompts={result.get('failed_prompts', 0)}/{result.get('total_prompts', 0)}"
+                )
+        except Exception as e:
+            print(f"    ERROR {symbol}: {e}")
+            failed_symbols.append(symbol)
+            failed_details.append(f"{symbol}: symbol_error={e}")
+            continue
     
     print("\\n" + "=" * 60)
     print("COMPLETE!")
     print(f"Labels saved to: {args.data_dir}/*_gpt-4.csv")
+    empty_reason_file = Path(args.data_dir) / "news_empty_reason_log.jsonl"
+    empty_reason_events = 0
+    if empty_reason_file.exists():
+        with open(empty_reason_file, mode="r", encoding="utf-8") as f:
+            empty_reason_events = sum(1 for line in f if line.strip())
+    if failed_symbols:
+        failed_file = Path(args.data_dir) / "failed_symbols.txt"
+        failed_file.write_text("\n".join(failed_details) + "\n", encoding="utf-8")
+        print(f"Failed symbols: {', '.join(failed_symbols)}")
+        print(f"Failure details saved to: {failed_file}")
+    else:
+        print("No failed symbols.")
+    print(
+        f"Run summary: failed_symbols={len(failed_symbols)}, "
+        f"empty_reason_events={empty_reason_events}"
+    )
     print("=" * 60)
     print("\\nNext step: Run build_dataset.py to create training dataset")
 

@@ -3,6 +3,7 @@ Check training label CSV files for empty rows/fields.
 
 Pattern example:
     [ticker]_monfri_gpt-4.csv
+    [ticker]_gpt-4.csv
 
 Usage:
     python check_empty_labels_mon.py --data_dir ./raw_data/2023-02-20_2026-02-16
@@ -15,7 +16,7 @@ import csv
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 
 @dataclass
@@ -130,14 +131,31 @@ def summarize(issues: List[Issue]) -> Dict[str, Dict[str, int]]:
     return per_file
 
 
+def parse_patterns(pattern_arg: str) -> List[str]:
+    patterns = [p.strip() for p in pattern_arg.split(",") if p.strip()]
+    return patterns or ["*_monfri_gpt-4.csv", "*_gpt-4.csv"]
+
+
+def collect_files(data_dir: Path, patterns: List[str]) -> List[Path]:
+    files: Set[Path] = set()
+    for pattern in patterns:
+        files.update(data_dir.glob(pattern))
+    return sorted(files)
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Check *_monfri_gpt-4.csv for empty label rows.")
+    parser = argparse.ArgumentParser(
+        description="Check *_monfri_gpt-4.csv and *_gpt-4.csv for empty label rows."
+    )
     parser.add_argument("--data_dir", type=str, required=True, help="Directory containing label CSV files.")
     parser.add_argument(
         "--pattern",
         type=str,
-        default="*_monfri_gpt-4.csv",
-        help="Glob pattern for files to inspect (default: *_monfri_gpt-4.csv).",
+        default="*_monfri_gpt-4.csv,*_gpt-4.csv",
+        help=(
+            "Glob pattern(s) for files to inspect. "
+            "Use comma-separated patterns (default: *_monfri_gpt-4.csv,*_gpt-4.csv)."
+        ),
     )
     parser.add_argument(
         "--report_csv",
@@ -160,9 +178,10 @@ def main() -> int:
         print(f"ERROR: Invalid directory: {data_dir}")
         return 2
 
-    files = sorted(data_dir.glob(args.pattern))
+    patterns = parse_patterns(args.pattern)
+    files = collect_files(data_dir, patterns)
     if not files:
-        print(f"No files found in {data_dir} with pattern: {args.pattern}")
+        print(f"No files found in {data_dir} with patterns: {', '.join(patterns)}")
         return 0
 
     auditor = LabelFileAuditor(
@@ -184,7 +203,7 @@ def main() -> int:
     print("Training label audit")
     print("=" * 72)
     print(f"Directory: {data_dir}")
-    print(f"Pattern:   {args.pattern}")
+    print(f"Patterns:  {', '.join(patterns)}")
     print(f"Files:     {len(files)}")
     print(f"Issues:    {total_issues}")
     print("-" * 72)

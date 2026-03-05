@@ -61,7 +61,14 @@ def bin_mapping(ret):
     return up_down + (str(integer) if integer <= 5 else '5+')
 
 
-def get_returns(stock_symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+def get_returns(
+    stock_symbol: str,
+    start_date: str,
+    end_date: str,
+    max_retries: int = 6,
+    base_wait_seconds: float = 30.0,
+    max_wait_seconds: float = 300.0
+) -> pd.DataFrame:
     """
     Download stock data and calculate weekly returns.
     
@@ -74,10 +81,57 @@ def get_returns(stock_symbol: str, start_date: str, end_date: str) -> pd.DataFra
         DataFrame with weekly price data and returns
     """
     print(f"  Downloading stock data for {stock_symbol}...")
-    stock_data = yf.download(stock_symbol, start=start_date, end=end_date, progress=False)
-    
+    stock_data = pd.DataFrame()
+    last_error = None
+
+    # Yahoo is best-effort: try once, then continue with Finnhub fallback if it fails.
+    try:
+        stock_data = yf.download(stock_symbol, start=start_date, end=end_date, progress=False)
+        if len(stock_data) == 0:
+            last_error = ValueError("No stock data returned")
+    except Exception as e:
+        last_error = e
+
     if len(stock_data) == 0:
-        raise ValueError(f"No stock data found for {stock_symbol}")
+        print(f"    Yahoo failed for {stock_symbol}: {last_error}. Falling back to Stooq daily prices...")
+        for attempt in range(1, max_retries + 1):
+            try:
+                stooq_symbol = f"{stock_symbol.lower()}.us"
+                stooq_url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&i=d"
+                stooq_df = pd.read_csv(stooq_url)
+                if stooq_df.empty or "Date" not in stooq_df.columns or "Close" not in stooq_df.columns:
+                    last_error = ValueError("Stooq returned empty/invalid data")
+                else:
+                    stooq_df["Date"] = pd.to_datetime(stooq_df["Date"], errors="coerce")
+                    stooq_df["Close"] = pd.to_numeric(stooq_df["Close"], errors="coerce")
+                    stooq_df = stooq_df.dropna(subset=["Date", "Close"])
+                    stooq_df = stooq_df.sort_values("Date")
+                    stooq_df = stooq_df[
+                        (stooq_df["Date"] >= pd.Timestamp(start_date))
+                        & (stooq_df["Date"] < pd.Timestamp(end_date))
+                    ]
+                    if stooq_df.empty:
+                        last_error = ValueError("Stooq has no rows in requested date range")
+                    else:
+                        stock_data = stooq_df.set_index("Date")[["Close"]]
+                        break
+            except Exception as e:
+                last_error = e
+
+            if attempt < max_retries:
+                wait_seconds = min(base_wait_seconds * (2 ** (attempt - 1)), max_wait_seconds)
+                wait_seconds += random.uniform(0, 3)
+                print(
+                    f"    Stooq fetch failed for {stock_symbol} (attempt {attempt}/{max_retries}): "
+                    f"{last_error}. Retrying in {wait_seconds:.1f}s..."
+                )
+                time.sleep(wait_seconds)
+
+    if len(stock_data) == 0:
+        raise ValueError(
+            f"No stock data found for {stock_symbol} after Yahoo + Stooq retries. "
+            f"Last error: {last_error}"
+        )
     
     # Handle both old ('Adj Close') and new ('Close' with auto_adjust=True) yfinance versions
     if 'Adj Close' in stock_data.columns:
@@ -107,6 +161,37 @@ def get_returns(stock_symbol: str, start_date: str, end_date: str) -> pd.DataFra
     
     weekly_df['Bin Label'] = weekly_df['Weekly Returns'].map(bin_mapping)
     return weekly_df
+
+
+def log_close_to_close_samples(symbol: str, data: pd.DataFrame, sample_weeks: int = 3) -> None:
+    """Print a few close-to-close weekly rows per symbol for quick spot checks."""
+    if data.empty or sample_weeks <= 0:
+        return
+
+    total_rows = len(data)
+    sample_weeks = min(sample_weeks, total_rows)
+
+    if sample_weeks == 1:
+        sample_indices = [total_rows - 1]
+    else:
+        # Evenly spread sampled weeks across the full date range.
+        sample_indices = sorted(
+            {
+                round(i * (total_rows - 1) / (sample_weeks - 1))
+                for i in range(sample_weeks)
+            }
+        )
+
+    print(f"  Spot-check close-to-close weeks for {symbol}:")
+    for idx in sample_indices:
+        row = data.iloc[idx]
+        print(
+            "    "
+            f"{row['Start Date'].strftime('%Y-%m-%d')} -> {row['End Date'].strftime('%Y-%m-%d')} | "
+            f"start_close={row['Start Price']:.4f}, "
+            f"end_close={row['End Price']:.4f}, "
+            f"return={(row['Weekly Returns'] * 100):.3f}% ({row['Bin Label']})"
+        )
 
 
 def get_news(finnhub_client, symbol: str, data: pd.DataFrame, rate_limit_delay: float = 0.25) -> pd.DataFrame:
@@ -141,15 +226,64 @@ def get_news(finnhub_client, symbol: str, data: pd.DataFrame, rate_limit_delay: 
         
         for attempt in range(max_retries):
             try:
-                weekly_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
-                weekly_news = [
-                    {
-                        "date": datetime.fromtimestamp(n['datetime']).strftime('%Y%m%d%H%M%S'),
-                        "headline": n['headline'],
-                        "summary": n['summary'],
-                    } for n in weekly_news
-                ]
-                weekly_news.sort(key=lambda x: x['date'])
+                company_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
+                normalized_news = []
+                skipped_invalid_datetime = 0
+
+                for n in company_news:
+                    raw_ts = n.get("datetime")
+                    if raw_ts is None:
+                        skipped_invalid_datetime += 1
+                        continue
+
+                    try:
+                        ts = float(raw_ts)
+                    except (TypeError, ValueError):
+                        skipped_invalid_datetime += 1
+                        continue
+
+                    if ts <= 0:
+                        skipped_invalid_datetime += 1
+                        continue
+
+                    # Finnhub timestamps are usually seconds, but tolerate millisecond payloads.
+                    if ts > 1e12:
+                        ts = ts / 1000.0
+
+                    try:
+                        parsed_date = datetime.fromtimestamp(ts).strftime('%Y%m%d%H%M%S')
+                    except (OverflowError, OSError, ValueError):
+                        skipped_invalid_datetime += 1
+                        continue
+
+                    normalized_news.append(
+                        {
+                            "news_type": "company",
+                            "date": parsed_date,
+                            "headline": n.get('headline', ''),
+                            "summary": n.get('summary', ''),
+                            "source": n.get('source', ''),
+                        }
+                    )
+
+                if skipped_invalid_datetime:
+                    print(
+                        f"    {symbol}: skipped {skipped_invalid_datetime} news items "
+                        f"with invalid datetime in {start_date} - {end_date}"
+                    )
+                deduped = []
+                seen_keys = set()
+                for item in normalized_news:
+                    key = (
+                        item.get("date", ""),
+                        (item.get("headline", "") or "").strip().lower(),
+                    )
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    deduped.append(item)
+
+                weekly_news = sorted(deduped, key=lambda x: x['date'])
                 break  # Success, exit retry loop
             except Exception as e:
                 error_str = str(e)
@@ -227,7 +361,8 @@ def prepare_data_for_company(
     end_date: str, 
     data_dir: str,
     with_basics: bool = True,
-    rate_limit_delay: float = 1.1
+    rate_limit_delay: float = 1.1,
+    sample_weeks: int = 3
 ) -> pd.DataFrame:
     """
     Prepare complete dataset for a single company.
@@ -248,6 +383,7 @@ def prepare_data_for_company(
     
     try:
         data = get_returns(symbol, start_date, end_date)
+        log_close_to_close_samples(symbol, data, sample_weeks)
         data = get_news(finnhub_client, symbol, data, rate_limit_delay)
         
         if with_basics:
@@ -285,6 +421,8 @@ def main():
                         help='Exclude basic financials')
     parser.add_argument('--rate_limit_delay', type=float, default=0.25,
                         help='Delay between Finnhub API calls in seconds (default: 0.25s for paid tier: 300 calls/min)')
+    parser.add_argument('--sample_weeks', type=int, default=3,
+                        help='Number of close-to-close weekly rows to print per symbol for spot checks')
     args = parser.parse_args()
     
     # Get API key
@@ -324,7 +462,7 @@ def main():
     for symbol in symbols:
         result = prepare_data_for_company(
             finnhub_client, symbol, args.start_date, args.end_date, 
-            data_dir, with_basics, args.rate_limit_delay
+            data_dir, with_basics, args.rate_limit_delay, args.sample_weeks
         )
         if not result.empty:
             successful += 1

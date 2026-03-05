@@ -260,15 +260,29 @@ def get_news(
         
         for attempt in range(max_retries):
             try:
-                weekly_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
-                weekly_news = [
+                company_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
+                company_news = [
                     {
+                        "news_type": "company",
                         "date": datetime.fromtimestamp(n['datetime']).strftime('%Y%m%d%H%M%S'),
-                        "headline": n['headline'],
-                        "summary": n['summary'],
-                    } for n in weekly_news
+                        "headline": n.get('headline', ''),
+                        "summary": n.get('summary', ''),
+                        "source": n.get('source', ''),
+                    } for n in company_news
                 ]
-                weekly_news.sort(key=lambda x: x['date'])
+                deduped = []
+                seen_keys = set()
+                for item in company_news:
+                    key = (
+                        item.get("date", ""),
+                        (item.get("headline", "") or "").strip().lower(),
+                    )
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    deduped.append(item)
+
+                weekly_news = sorted(deduped, key=lambda x: x['date'])
                 break  # Success, exit retry loop
             except Exception as e:
                 error_str = str(e)

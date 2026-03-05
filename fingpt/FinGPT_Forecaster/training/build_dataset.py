@@ -44,11 +44,34 @@ Analysis: ...
 Technical | Flow | Narrative | Mixed | Unknown"""
 
 
+def _extract_period_and_label(prompt: str):
+    """
+    Extract (period, label) from supported prompt variants.
+    Returns (None, None) if parsing fails.
+    """
+    patterns = [
+        r"Then let's assume your prediction for next week \((.*)\) is ((?:up|down) by .*?)\.",
+        r"Then let's assume your prediction for the coming trading week \((.*)\) is ((?:up|down) by .*?)\.",
+        r"Then let's assume your prediction for next trading week \((.*)\) is ((?:up|down) by .*?)\.",
+    ]
+    for pattern in patterns:
+        res = re.search(pattern, prompt)
+        if res:
+            return res.group(1), res.group(2)
+    return None, None
+
+
 # ============================================================================
 # CONVERSION FUNCTIONS
 # ============================================================================
 
-def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_type: str = 'llama2') -> dict:
+def gpt4_to_llama(
+    symbol: str,
+    data_dir: str,
+    with_basics: bool = True,
+    format_type: str = 'llama2',
+    stats: dict = None,
+) -> dict:
     """
     Convert GPT-4 labeled data to Llama2 training format.
     
@@ -66,9 +89,13 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_t
     
     if not os.path.exists(csv_file):
         print(f"    Warning: No GPT-4 file found for {symbol}")
+        if stats is not None:
+            stats["missing_csv_files"] = stats.get("missing_csv_files", 0) + 1
         return None
     
     df = pd.read_csv(csv_file)
+    if stats is not None:
+        stats["rows_seen"] = stats.get("rows_seen", 0) + len(df)
     
     # Check if primary_driver column exists
     has_driver = 'primary_driver' in df.columns
@@ -80,27 +107,40 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_t
         primary_driver = row['primary_driver'] if has_driver and pd.notna(row['primary_driver']) else "Unknown"
         
         if pd.isna(answer) or not answer.strip():
+            if stats is not None:
+                stats["rows_skipped_empty_answer"] = stats.get("rows_skipped_empty_answer", 0) + 1
             continue
         
-        # Extract period and label from the original prompt
-        res = re.search(
-            r"Then let's assume your prediction for next week \((.*)\) is ((?:up|down) by .*%)\.", 
-            prompt
-        )
-        
-        if not res:
+        # Extract period and label from supported prompt variants.
+        period, label = _extract_period_and_label(prompt)
+        if not period or not label:
             print(f"    Warning: Could not parse prompt {i} for {symbol}")
+            if stats is not None:
+                stats["rows_skipped_parse_fail"] = stats.get("rows_skipped_parse_fail", 0) + 1
             continue
-        
-        period, label = res.group(1), res.group(2)
-        
-        # Transform the prompt: remove the "assume prediction" part
-        # Using [\s\S]*? to match any content (including newlines) between the start and end patterns
-        prompt = re.sub(
-            r"Then let's assume your prediction for next week \((.*)\) is (?:up|down) by (?:.*?)%. Provide a summary analysis to support your prediction[\s\S]*?The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis.",
-            f"Then make your prediction of the {symbol} stock price movement for next week ({period}). Provide a summary analysis to support your prediction.",
-            prompt
-        )
+
+        # Transform the prompt: replace the assumption sentence while preserving
+        # the rest of the instruction block.
+        assumption_sentence_patterns = [
+            r"Then let's assume your prediction for next week \((.*)\) is (?:up|down) by (?:.*?)%\.",
+            r"Then let's assume your prediction for the coming trading week \((.*)\) is (?:up|down) by (?:.*?)%\.",
+            r"Then let's assume your prediction for next trading week \((.*)\) is (?:up|down) by (?:.*?)%\.",
+        ]
+        prompt_replaced = False
+        for ptn in assumption_sentence_patterns:
+            new_prompt, replace_count = re.subn(
+                ptn,
+                f"Then make your prediction of the {symbol} stock price movement for next week ({period}).",
+                prompt,
+                count=1,
+            )
+            if replace_count > 0:
+                prompt = new_prompt
+                prompt_replaced = True
+                break
+
+        if not prompt_replaced and stats is not None:
+            stats["rows_assumption_replace_miss"] = stats.get("rows_assumption_replace_miss", 0) + 1
         
         # Transform the answer: add explicit prediction line AND primary driver
         try:
@@ -119,6 +159,8 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_t
             
         except Exception as e:
             print(f"    Warning: Could not transform answer {i} for {symbol}: {e}")
+            if stats is not None:
+                stats["rows_skipped_answer_transform_fail"] = stats.get("rows_skipped_answer_transform_fail", 0) + 1
             continue
         
         # Format based on model type
@@ -136,6 +178,8 @@ def gpt4_to_llama(symbol: str, data_dir: str, with_basics: bool = True, format_t
         periods.append(period)
         labels.append(label)
         symbols.append(symbol)
+        if stats is not None:
+            stats["rows_kept"] = stats.get("rows_kept", 0) + 1
     
     if not prompts:
         return None
@@ -154,7 +198,8 @@ def create_dataset(
     symbols: list = None,
     train_ratio: float = 0.8,
     with_basics: bool = True,
-    format_type: str = 'llama2'
+    format_type: str = 'llama2',
+    return_stats: bool = False,
 ) -> DatasetDict:
     """
     Create a HuggingFace dataset from all processed symbols.
@@ -177,11 +222,12 @@ def create_dataset(
     
     train_dataset_list = []
     test_dataset_list = []
+    build_stats = {}
     
     print(f"\nProcessing {len(symbols)} symbols...")
     
     for symbol in symbols:
-        data_dict = gpt4_to_llama(symbol, data_dir, with_basics, format_type)
+        data_dict = gpt4_to_llama(symbol, data_dir, with_basics, format_type, stats=build_stats)
         
         if data_dict is None:
             continue
@@ -202,11 +248,14 @@ def create_dataset(
     
     train_dataset = datasets.concatenate_datasets(train_dataset_list)
     test_dataset = datasets.concatenate_datasets(test_dataset_list) if test_dataset_list else train_dataset.select(range(0))
-    
-    return DatasetDict({
+
+    dataset = DatasetDict({
         'train': train_dataset,
         'test': test_dataset
     })
+    if return_stats:
+        return dataset, build_stats
+    return dataset
 
 
 # ============================================================================
@@ -245,12 +294,13 @@ def main():
     print("=" * 60)
     
     # Create dataset
-    dataset = create_dataset(
+    dataset, build_stats = create_dataset(
         args.data_dir,
         symbols=symbols,
         train_ratio=args.train_ratio,
         with_basics=with_basics,
-        format_type=args.format
+        format_type=args.format,
+        return_stats=True,
     )
     
     # Save dataset
@@ -264,6 +314,15 @@ def main():
     print(f"Train samples: {len(dataset['train'])}")
     print(f"Test samples: {len(dataset['test'])}")
     print(f"Saved to: {output_path}")
+    print("=" * 60)
+    print("\n--- Conversion Stats ---")
+    print(f"Rows seen: {build_stats.get('rows_seen', 0)}")
+    print(f"Rows kept: {build_stats.get('rows_kept', 0)}")
+    print(f"Rows skipped (empty answer): {build_stats.get('rows_skipped_empty_answer', 0)}")
+    print(f"Rows skipped (parse fail): {build_stats.get('rows_skipped_parse_fail', 0)}")
+    print(f"Rows skipped (answer transform fail): {build_stats.get('rows_skipped_answer_transform_fail', 0)}")
+    print(f"Assumption replace misses: {build_stats.get('rows_assumption_replace_miss', 0)}")
+    print(f"Missing CSV files: {build_stats.get('missing_csv_files', 0)}")
     print("=" * 60)
     
     # Show sample
