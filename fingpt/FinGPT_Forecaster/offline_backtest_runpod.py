@@ -21,11 +21,25 @@ load_dotenv()
 DEFAULT_RUNPOD_API_ID = os.environ.get("RUNPOD_API_ID", "YOUR_ENDPOINT_ID_HERE")
 DEFAULT_API_KEY = os.environ.get("RUNPOD_API_KEY", "YOUR_RUNPOD_API_KEY_HERE")
 
+def _frame_debug_summary(df):
+    if df is None:
+        return "None"
+    if not isinstance(df, pd.DataFrame):
+        return f"type={type(df).__name__}"
+    if len(df) == 0:
+        cols = list(df.columns)
+        return f"empty DataFrame, columns={cols}"
+
+    cols = list(df.columns)
+    idx_start = df.index.min()
+    idx_end = df.index.max()
+    return f"rows={len(df)}, columns={cols}, index_range={idx_start} -> {idx_end}"
+
 def _download_with_stooq(ticker, start_date, end_date):
     try:
         from pandas_datareader import data as pdr
-    except Exception:
-        print("pandas_datareader not installed. Run: pip install pandas_datareader")
+    except Exception as e:
+        print(f"Stooq unavailable: pandas_datareader import failed: {e!r}")
         return None
 
     candidates = [ticker]
@@ -34,12 +48,15 @@ def _download_with_stooq(ticker, start_date, end_date):
 
     for symbol in candidates:
         try:
+            print(f"Trying Stooq for {symbol} [{start_date} -> {end_date}]")
             df = pdr.DataReader(symbol, "stooq", start_date, end_date)
             if df is None or len(df) == 0:
+                print(f"Stooq returned no rows for {symbol}")
                 continue
+            print(f"Stooq success for {symbol}: {_frame_debug_summary(df)}")
             return df.sort_index()
         except Exception as e:
-            print(f"Stooq fetch failed for {symbol}: {e}")
+            print(f"Stooq fetch failed for {symbol}: {e!r}")
 
     return None
 
@@ -51,22 +68,32 @@ def get_actual_movement(ticker, start_date, end_date):
         # Extend end_date by a few days to ensure we get the data (yfinance end is exclusive)
         end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=3)
         end_str = end_dt.strftime("%Y-%m-%d")
+        print(f"Verifying actual move for {ticker} [{start_date} -> {end_date}] (download window ends {end_str})")
         
         data = None
         if os.environ.get("USE_STOOQ_ONLY") != "1":
-            data = yf.download(
-                ticker,
-                start=start_date,
-                end=end_str,
-                progress=False,
-                auto_adjust=False,
-            )
+            try:
+                data = yf.download(
+                    ticker,
+                    start=start_date,
+                    end=end_str,
+                    progress=False,
+                    auto_adjust=False,
+                )
+                print(f"Yahoo result for {ticker}: {_frame_debug_summary(data)}")
+            except Exception as e:
+                print(f"Yahoo fetch raised for {ticker}: {e!r}")
+                data = None
 
         if data is None or not isinstance(data, pd.DataFrame) or len(data) == 0:
+            print(f"Falling back to Stooq for {ticker}")
             data = _download_with_stooq(ticker, start_date, end_str)
 
         if data is None or not isinstance(data, pd.DataFrame) or len(data) == 0:
-            print("Error: no price data returned by yfinance or stooq")
+            print(
+                f"Error: no price data returned by yfinance or stooq for "
+                f"{ticker} [{start_date} -> {end_date}]"
+            )
             return None, None, None, None
 
         # Get close price closest to start_date
@@ -81,7 +108,7 @@ def get_actual_movement(ticker, start_date, end_date):
                     # Otherwise assume it's the only column or take the first one
                     close_data = close_data.iloc[:, 0]
         except KeyError:
-             print("Error: 'Close' column not found in data")
+             print(f"Error: 'Close' column not found in data. Frame summary: {_frame_debug_summary(data)}")
              return None, None, None, None
 
         start_price = close_data.iloc[0]
@@ -99,6 +126,13 @@ def get_actual_movement(ticker, start_date, end_date):
         
         if len(week_data) < 2:
             # If not enough data points in the exact week, try taking next available
+            idx_start = close_data.index.min() if len(close_data) else None
+            idx_end = close_data.index.max() if len(close_data) else None
+            print(
+                f"Error: insufficient price points for {ticker} in requested week "
+                f"[{start_date} -> {end_date}]. week_rows={len(week_data)}, "
+                f"available_close_range={idx_start} -> {idx_end}"
+            )
             return None, None, None, None
             
         week_start_price = float(week_data.iloc[0])
@@ -111,7 +145,7 @@ def get_actual_movement(ticker, start_date, end_date):
         return direction, float(pct_change), float(week_end_price), float(week_start_price)
         
     except Exception as e:
-        print(f"Error fetching verification data: {e}")
+        print(f"Error fetching verification data for {ticker} [{start_date} -> {end_date}]: {e!r}")
         return None, None, None, None
 
 def run_prediction_task(api_id, api_key, payload):
