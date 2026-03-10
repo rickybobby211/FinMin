@@ -346,7 +346,49 @@ class MarketDataManager:
 
 market_manager = MarketDataManager()
 
-SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list the positive developments and potential concerns for companies based on relevant news and basic financials from the past weeks, then provide an analysis and prediction for the companies' stock price movement for the upcoming week. Your answer format should be as follows:
+SYSTEM_PROMPT = """You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, VIX, ATR, volume, mean reversion, alpha vs market)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend, momentum, and relative performance using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0-100%).
+
+Decision rules:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- The most recent [QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block is the primary signal for the next-week forecast. Older weekly blocks are context, not the final tie-breaker.
+- Follow this signal hierarchy: Technical structure first, flow/relative performance second, news/fundamentals third.
+- Technical structure defines base probability. Strong trend and momentum should outweigh headlines unless the news is a major catalyst.
+- Do not predict UP solely because RSI is oversold. Oversold can remain oversold in a weak tape.
+- If the latest block shows bearish momentum and weak flow together, such as Bearish Crossover plus underperformance vs the market plus weak/normal volume, prefer continuation risk over an immediate rebound unless a strong catalyst clearly changes the setup.
+- If news conflicts with the latest technical structure, explain the divergence explicitly instead of ignoring it.
+- IF NO NEWS ARE PROVIDED: Do not simply say there is no news. Explain the move using market mechanics such as sector rotation, institutional flows, beta-driven index movement, or technical mean reversion/breakout. Be cautious about assuming trend continuation.
+- Mixed or conflicting signals are allowed, but you must still make a clear directional call and lower confidence when conviction is weak.
+- Conclude by labeling the main cause of the forecast as one of: Technical, Flow, Narrative, Mixed, or Unknown.
+
+Output constraints:
+- Output plain text only.
+- Do NOT produce XML, HTML, JSON, markdown code fences, or tool markup.
+- Do NOT output tags such as <tool_call>, </tool_call>, <function>, or similar placeholders.
+- Start the final answer with the exact marker: ### ANSWER START
+- The final answer must include both lines `Prediction:` and `Confidence:` exactly once.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
 
 [Positive Developments]:
 1. ...
@@ -354,24 +396,11 @@ SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to list
 [Potential Concerns]:
 1. ...
 
-[Prediction & Analysis]:
-...
+[Prediction & Analysis]
+Analysis: ...
 
 [Primary Driver]:
-Technical | Flow | Narrative | Mixed | Unknown
-
-Follow this analytical hierarchy:
-1. Technical Reality: Technical indicators (RSI, MACD, SMA50) define the boundaries of what is possible. Do not predict a rally if the stock is extremely overextended without a massive catalyst.
-2. Relative Performance: Always consider Alpha. If the stock is underperforming its index despite good news, look for hidden weaknesses.
-3. News Catalyst: Use news to explain the 'Why', but never let news justify a lie about the 'What' (the technical data).
-4. Dealing with "No News": If there are no specific company news but the price moved significantly, do NOT just say "absence of news". Instead, explicitly analyze the move as driven by market mechanics (e.g., "sector-level repricing", "institutional flows indicated by Volume Z-Score", "beta-driven momentum", or "technical breakout"). Avoid vague language; ascribe the move to market flows or technical structure if fundamental catalysts are missing.
-5. Primary Driver: Conclude your analysis by categorizing the main cause of the move into one of these tags:
-   - Technical: Move driven by chart patterns, oversold/bought conditions, or mean reversion.
-   - Flow: Move driven by volume, sector rotation, or broad market correlation (beta).
-   - Narrative: Move driven by specific company news, earnings, or macro events directly impacting the thesis.
-   - Mixed: A combination of strong news and technical setup.
-   - Unknown: No clear reason found.
-"""
+Technical | Flow | Narrative | Mixed | Unknown"""
 
 
 def append_empty_reason_log(
@@ -1155,8 +1184,11 @@ def get_all_prompts(
         
         # Build final prompt string
         full_prompt = company_prompt + '\\n' + prompt_str + '\\n' + p_row["basics"]
-        full_prompt += f"\\n\\nBased on all the information before {p_row['start_date']}, let's first analyze the positive developments and potential concerns for {symbol}. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. "
-        full_prompt += f"Then let's assume your prediction for next week ({p_row['start_date']} to {p_row['end_date']}) is {prediction}. Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If the prediction is {prediction} but the technicals show a conflict (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically (e.g., as a 'trend reversal' or 'short squeeze') rather than ignoring the data. The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis."
+        full_prompt += f"\\n\\nBased on all the information before {p_row['start_date']}, first analyze the positive developments and potential concerns for {symbol}. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. "
+        full_prompt += "Use the most recent [QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block as the primary basis for the next-week forecast; older weeks are context only. "
+        full_prompt += f"Then let's assume your prediction for next week ({p_row['start_date']} to {p_row['end_date']}) is {prediction}. Provide a summary analysis to support that prediction. Before writing the analysis, cross-reference the latest [QUANT SIGNALS] with the [NEWS]. Technical structure should carry the most weight, flow/relative performance should confirm or weaken conviction, and news should provide the narrative context. "
+        full_prompt += "Do not justify an UP prediction only because RSI is oversold. If the latest signals show bearish momentum plus underperformance versus the market, treat continuation risk as the default unless a strong catalyst clearly overrides it. "
+        full_prompt += f"If the assumed prediction is {prediction} but the technicals show a conflict, explain this divergence logically rather than ignoring the data. The prediction should be supported by the analysis rather than used as a foundational reason. Conclude with a [Primary Driver] tag using one of Technical, Flow, Narrative, Mixed, or Unknown. Return plain text only and never output <tool_call> or similar markup."
 
         return (full_prompt.strip(), prediction, p_row['start_date'], p_row['end_date'])
 

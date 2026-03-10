@@ -54,19 +54,34 @@ You will be given:
 - Company profile and basic financials
 - Weekly historical news headlines and short descriptions
 - Weekly price data
-- Quant signals and technical indicators (RSI, MACD, VIX, ATR, volume, mean reversion)
+- Quant signals and technical indicators (RSI, MACD, VIX, ATR, volume, mean reversion, alpha vs market)
 
 Your task:
 1. Identify key positive developments from the news/financials.
 2. Identify key negative developments.
-3. Analyze price trend and momentum using the provided quant/technical signals.
+3. Analyze price trend, momentum, and relative performance using the provided quant/technical signals.
 4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
-5. Provide confidence level (0–100%).
+5. Provide confidence level (0-100%).
 
-Constraints:
+Decision rules:
 - Use ONLY the information given.
 - Do NOT reference any future knowledge beyond the cutoff date.
-- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- The most recent [QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block is the primary signal for the next-week forecast. Older weekly blocks are context, not the final tie-breaker.
+- Follow this signal hierarchy: Technical structure first, flow/relative performance second, news/fundamentals third.
+- Technical structure defines base probability. Strong trend and momentum should outweigh headlines unless the news is a major catalyst.
+- Do not predict UP solely because RSI is oversold. Oversold can remain oversold in a weak tape.
+- If the latest block shows bearish momentum and weak flow together, such as Bearish Crossover plus underperformance vs the market plus weak/normal volume, prefer continuation risk over an immediate rebound unless a strong catalyst clearly changes the setup.
+- If news conflicts with the latest technical structure, explain the divergence explicitly instead of ignoring it.
+- IF NO NEWS ARE PROVIDED: Do not simply say there is no news. Explain the move using market mechanics such as sector rotation, institutional flows, beta-driven index movement, or technical mean reversion/breakout. Be cautious about assuming trend continuation.
+- Mixed or conflicting signals are allowed, but you must still make a clear directional call and lower confidence when conviction is weak.
+- Conclude by labeling the main cause of the forecast as one of: Technical, Flow, Narrative, Mixed, or Unknown.
+
+Output constraints:
+- Output plain text only.
+- Do NOT produce XML, HTML, JSON, markdown code fences, or tool markup.
+- Do NOT output tags such as <tool_call>, </tool_call>, <function>, or similar placeholders.
+- Start the final answer with the exact marker: ### ANSWER START
+- The final answer must include both lines `Prediction:` and `Confidence:` exactly once.
 
 Your answer format must be as follows:
 
@@ -84,7 +99,10 @@ Confidence: [Percentage]%
 1. ...
 
 [Prediction & Analysis]
-Analysis: ..."""
+Analysis: ...
+
+[Primary Driver]:
+Technical | Flow | Narrative | Mixed | Unknown"""
 
 # Global model (loaded once, reused for all requests)
 model = None
@@ -1040,15 +1058,23 @@ class PromptBuilder:
         period = f"{self.context.curday} to {end_date_str}"
         
         instruction = (
-            f"Based on all the information before {self.context.curday}, let's first analyze the "
+            f"Based on all the information before {self.context.curday}, first analyze the "
             f"positive developments and potential concerns for {self.context.ticker}. Come up with "
             "2-4 most important factors respectively and keep them concise. Integrate both "
-            "quantitative signals and news to explain the movement. "
+            "quantitative signals and news to explain the movement. Use the most recent "
+            "[QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block as the primary basis "
+            "for the next-week forecast; older weeks are context only. "
             f"Then make your prediction for next week ({period}). Provide a summary analysis "
-            "to support your prediction. Before writing the analysis, cross-reference the "
-            "[QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals "
-            "(e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence "
-            "logically rather than ignoring the data."
+            "to support your prediction. Before writing the analysis, cross-reference the latest "
+            "[QUANT SIGNALS] with the [NEWS]. Technical structure should carry the most weight, "
+            "flow/relative performance should confirm or weaken conviction, and news should "
+            "provide the narrative context. Do not predict a rebound only because RSI is oversold. "
+            "If the latest signals show bearish momentum plus underperformance versus the market, "
+            "treat continuation risk as the default unless a strong catalyst clearly overrides it. "
+            "If your prediction conflicts with the technicals, explain this divergence logically "
+            "instead of ignoring the data. Conclude with a [Primary Driver] tag using one of "
+            "Technical, Flow, Narrative, Mixed, or Unknown. Return plain text only and never "
+            "output <tool_call> or similar markup."
         )
         self.parts.append("\n" + instruction)
         return self
