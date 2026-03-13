@@ -53,12 +53,44 @@ def _extract_period_and_label(prompt: str):
         r"Then let's assume your prediction for next week \((.*)\) is ((?:up|down) by .*?)\.",
         r"Then let's assume your prediction for the coming trading week \((.*)\) is ((?:up|down) by .*?)\.",
         r"Then let's assume your prediction for next trading week \((.*)\) is ((?:up|down) by .*?)\.",
+        r"The actual outcome for next week \((.*)\) was ((?:up|down) by .*?) with a realized return .*?\.",
+        r"The actual outcome for the coming trading week \((.*)\) was ((?:up|down) by .*?) with a realized return .*?\.",
+        r"The actual outcome for next trading week \((.*)\) was ((?:up|down) by .*?) with a realized return .*?\.",
     ]
     for pattern in patterns:
         res = re.search(pattern, prompt)
         if res:
             return res.group(1), res.group(2)
     return None, None
+
+
+def _rewrite_prompt_for_training(prompt: str, symbol: str, period: str):
+    """
+    Rewrite supported source prompt variants into a prediction task prompt.
+    Returns (rewritten_prompt, changed).
+    """
+    replacement = (
+        f"Then make your prediction of the {symbol} stock price movement "
+        f"for next week ({period})."
+    )
+    sentence_patterns = [
+        r"Then let's assume your prediction for next week \((.*)\) is (?:up|down) by (?:.*?)%\.",
+        r"Then let's assume your prediction for the coming trading week \((.*)\) is (?:up|down) by (?:.*?)%\.",
+        r"Then let's assume your prediction for next trading week \((.*)\) is (?:up|down) by (?:.*?)%\.",
+        r"The actual outcome for next week \((.*)\) was (?:up|down) by (?:.*?)% with a realized return .*?\.",
+        r"The actual outcome for the coming trading week \((.*)\) was (?:up|down) by (?:.*?)% with a realized return .*?\.",
+        r"The actual outcome for next trading week \((.*)\) was (?:up|down) by (?:.*?)% with a realized return .*?\.",
+    ]
+    for pattern in sentence_patterns:
+        new_prompt, replace_count = re.subn(
+            pattern,
+            replacement,
+            prompt,
+            count=1,
+        )
+        if replace_count > 0:
+            return new_prompt, True
+    return prompt, False
 
 
 # ============================================================================
@@ -119,26 +151,9 @@ def gpt4_to_llama(
                 stats["rows_skipped_parse_fail"] = stats.get("rows_skipped_parse_fail", 0) + 1
             continue
 
-        # Transform the prompt: replace the assumption sentence while preserving
-        # the rest of the instruction block.
-        assumption_sentence_patterns = [
-            r"Then let's assume your prediction for next week \((.*)\) is (?:up|down) by (?:.*?)%\.",
-            r"Then let's assume your prediction for the coming trading week \((.*)\) is (?:up|down) by (?:.*?)%\.",
-            r"Then let's assume your prediction for next trading week \((.*)\) is (?:up|down) by (?:.*?)%\.",
-        ]
-        prompt_replaced = False
-        for ptn in assumption_sentence_patterns:
-            new_prompt, replace_count = re.subn(
-                ptn,
-                f"Then make your prediction of the {symbol} stock price movement for next week ({period}).",
-                prompt,
-                count=1,
-            )
-            if replace_count > 0:
-                prompt = new_prompt
-                prompt_replaced = True
-                break
-
+        # Transform supported source prompt variants into the training prompt
+        # while preserving the rest of the instruction block.
+        prompt, prompt_replaced = _rewrite_prompt_for_training(prompt, symbol, period)
         if not prompt_replaced and stats is not None:
             stats["rows_assumption_replace_miss"] = stats.get("rows_assumption_replace_miss", 0) + 1
         

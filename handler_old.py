@@ -35,16 +35,14 @@ print("--- HANDLER STARTUP: Imports finished ---", flush=True)
 # ============================================================================
 
 MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
-ADAPTER_ID = os.environ.get("ADAPTER_PATH")
+ADAPTER_ID = os.environ.get("ADAPTER_PATH", "rickson21/qwen2.5-32b-finmin-v1")
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "32768"))
 MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "512"))
-SAFE_MIN_COMPLETION_TOKENS = int(os.environ.get("SAFE_MIN_COMPLETION_TOKENS", "192"))
+DEFAULT_TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.2"))
+print(f"--- GENERATION: Using temperature={DEFAULT_TEMPERATURE}", flush=True)
 ANSWER_START_MARKER = "### ANSWER START"
 INCLUDE_PROMPT_IN_RESPONSE = os.environ.get("INCLUDE_PROMPT_IN_RESPONSE", "0")
 TECH_STOCKS = {"AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"}
-MARKET_NEWS_CATEGORY = os.environ.get("MARKET_NEWS_CATEGORY", "general")
-MARKET_NEWS_MAX_PAGES = int(os.environ.get("MARKET_NEWS_MAX_PAGES", "3"))
-MARKET_NEWS_MAX_AGE_DAYS = int(os.environ.get("MARKET_NEWS_MAX_AGE_DAYS", "3"))
 
 B_INST, E_INST = "<|im_start|>", "<|im_end|>"
 B_SYS, E_SYS = "system\n", "\n<|im_start|>user\n"
@@ -55,7 +53,7 @@ You will be given:
 - Company profile and basic financials
 - Weekly historical news headlines and short descriptions
 - Weekly price data
-- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+- Quant signals and technical indicators (RSI, MACD, VIX, ATR, volume, mean reversion)
 
 Your task:
 1. Identify key positive developments from the news/financials.
@@ -68,7 +66,6 @@ Constraints:
 - Use ONLY the information given.
 - Do NOT reference any future knowledge beyond the cutoff date.
 - IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
-- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
 
 Your answer format must be as follows:
 
@@ -156,30 +153,6 @@ class MarketDataManager:
         except Exception:
             return {}
 
-    def get_volume_z_score(self, symbol: str, date_str: str) -> Optional[float]:
-        """Calculate Volume Z-Score. Returns None if data is unavailable."""
-        try:
-            df = self.get_data(symbol)
-            dt = pd.to_datetime(date_str)
-            price_col = "Close" if "Close" in df.columns else "Adj Close"
-            prices = df[price_col]
-            if dt not in prices.index:
-                idx_loc = prices.index.get_indexer([dt], method="pad")[0]
-                if idx_loc == -1:
-                    return None
-                dt = prices.index[idx_loc]
-
-            if "Volume" in df.columns:
-                vol = df["Volume"].loc[:dt]
-                if len(vol) >= 20:
-                    vol_mean = vol.rolling(window=20).mean().iloc[-1]
-                    vol_std = vol.rolling(window=20).std().iloc[-1]
-                    current_vol = vol.iloc[-1]
-                    return (current_vol - vol_mean) / vol_std if vol_std > 0 else None
-            return None
-        except Exception:
-            return None
-
     def get_technical_data(self, symbol: str, date_str: str) -> dict:
         """Calculate technical indicators and return as dict."""
         try:
@@ -257,14 +230,7 @@ class MarketDataManager:
             atr_desc = "High" if atr > current_price * 0.03 else "Normal"
 
             dist_sma50 = (current_price - sma50) / sma50 * 100
-            dist_sma200 = (current_price - sma200) / sma200 * 100
             reversion_desc = "Overextended" if abs(dist_sma50) > 15 else "Normal"
-            if current_price > sma50 > sma200:
-                trend_structure = "Bullish Stack"
-            elif current_price < sma50 < sma200:
-                trend_structure = "Bearish Stack"
-            else:
-                trend_structure = "Mixed Stack"
 
             return {
                 "rsi_daily": rsi_val,
@@ -277,8 +243,6 @@ class MarketDataManager:
                 "atr": atr,
                 "atr_desc": atr_desc,
                 "dist_sma50": dist_sma50,
-                "dist_sma200": dist_sma200,
-                "trend_structure": trend_structure,
                 "reversion_desc": reversion_desc,
             }
         except Exception:
@@ -312,10 +276,6 @@ def load_model():
         if not hf_token:
             print("ERROR: HF_TOKEN environment variable not set!", flush=True)
             raise ValueError("HF_TOKEN environment variable not set")
-            
-        if not ADAPTER_ID:
-            print("ERROR: ADAPTER_PATH environment variable not set!", flush=True)
-            raise ValueError("ADAPTER_PATH environment variable is missing. Please configure ADAPTER_PATH in RunPod environment variables.")
         
         print(f"Using Model ID: {MODEL_ID}", flush=True)
         print(f"Using Adapter ID: {ADAPTER_ID}", flush=True)
@@ -413,29 +373,18 @@ def get_stock_data(stock_symbol, steps):
     if len(stock_data) == 0:
         raise ValueError(f"No stock data found for {stock_symbol}")
     
-    if isinstance(stock_data.columns, pd.MultiIndex):
-        try:
-            stock_data = stock_data.droplevel(1, axis=1)
-        except Exception:
-            pass
-
     dates, prices = [], []
     available_dates = stock_data.index.strftime('%Y-%m-%d').tolist()
-    
-    def _to_float(val):
-        if hasattr(val, "iloc"):
-            return float(val.iloc[0])
-        return float(val)
     
     for step_date in steps[:-1]:
         for i, avail_date in enumerate(available_dates):
             if avail_date >= step_date:
-                prices.append(_to_float(stock_data['Close'].iloc[i]))
+                prices.append(float(stock_data['Close'].iloc[i]))
                 dates.append(datetime.strptime(avail_date, "%Y-%m-%d"))
                 break
     
     dates.append(datetime.strptime(available_dates[-1], "%Y-%m-%d"))
-    prices.append(_to_float(stock_data['Close'].iloc[-1]))
+    prices.append(float(stock_data['Close'].iloc[-1]))
     
     return pd.DataFrame({
         "Start Date": dates[:-1], "End Date": dates[1:],
@@ -454,25 +403,6 @@ def _parse_news_date(date_str: str) -> Optional[datetime]:
         return datetime.strptime(date_str[:14], "%Y%m%d%H%M%S")
     except Exception:
         return None
-
-
-def _is_spam(item: dict) -> bool:
-    """Check if a news item is spam/promotional."""
-    summary = item.get("summary", "")
-    if not summary:
-        return False
-
-    spam_phrases = [
-        "Looking for stock market analysis and research with proves results?",
-        "Zacks.com offers in-depth financial research",
-        "Click here to read my analysis",
-        "Click here to see why",
-    ]
-
-    for phrase in spam_phrases:
-        if phrase in summary:
-            return True
-    return False
 
 
 def _score_news_item(item: dict, end_date: Optional[str]) -> tuple:
@@ -504,175 +434,39 @@ def _score_news_item(item: dict, end_date: Optional[str]) -> tuple:
     return (recency_score, keyword_score + info_len)
 
 
-def _normalize_news_text(text: str) -> str:
-    text = (text or "").lower()
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _signal_tokens(item: dict) -> set[str]:
-    text = f"{item.get('headline', '')} {item.get('summary', '')}"
-    tokens = _normalize_news_text(text).split()
-    generic = {
-        "stock", "stocks", "shares", "market", "markets", "today", "week",
-        "company", "business", "update", "report",
-    }
-    return {tok for tok in tokens if len(tok) >= 5 and tok not in generic}
-
-
-def _same_incident_light(left: dict, right: dict) -> bool:
-    left_day = str(left.get("date", ""))[:8]
-    right_day = str(right.get("date", ""))[:8]
-    if left_day and right_day and left_day != right_day:
-        return False
-    shared = _signal_tokens(left) & _signal_tokens(right)
-    return len(shared) >= 2
-
-
 def rank_news_by_relevance(news: list, end_date: Optional[str]) -> list:
     """Return news sorted by heuristic relevance (recency + info richness)."""
     valid_news = [n for n in news if isinstance(n, dict)]
     return sorted(valid_news, key=lambda n: _score_news_item(n, end_date), reverse=True)
 
 
-def rank_news_with_llm(
-    news: list,
-    k: int,
-    symbol: str,
-    client,
-    model: str,
-    stock_return: float = 0.0,
-    market_return: float = 0.0,
-    market_name: str = "Market",
-    alpha: float = 0.0,
-    vol_z: float = 0.0,
-    period_start_date: Optional[str] = None,
-    period_end_date: Optional[str] = None,
-) -> list:
+def rank_news_with_llm(news: list, k: int, symbol: str, client, model: str) -> list:
     """
     Use LLM to select the most impactful news for a specific stock.
     """
     if not news:
         return []
-
+    
     # Prepare news list for LLM
-    valid_news = [n for n in news if isinstance(n, dict) and not _is_spam(n)]
-    cluster_representatives = []
-    cluster_ids = []
-    for idx, item in enumerate(valid_news):
-        assigned_cluster = None
-        for cluster_idx, rep_idx in enumerate(cluster_representatives):
-            if _same_incident_light(item, valid_news[rep_idx]):
-                assigned_cluster = cluster_idx
-                break
-        if assigned_cluster is None:
-            cluster_representatives.append(idx)
-            assigned_cluster = len(cluster_representatives) - 1
-        cluster_ids.append(assigned_cluster)
-
-    def _format_date_with_weekday(raw_date: str) -> str:
-        try:
-            if len(raw_date) >= 14:
-                dt = datetime.strptime(raw_date[:14], "%Y%m%d%H%M%S")
-            elif len(raw_date) >= 8:
-                dt = datetime.strptime(raw_date[:8], "%Y%m%d")
-            else:
-                return raw_date
-            return dt.strftime("%a %Y-%m-%d %H:%M")
-        except Exception:
-            return raw_date
-
     news_text = ""
-    id_to_idx = {}
+    valid_news = [n for n in news if isinstance(n, dict)]
     for i, n in enumerate(valid_news):
-        headline = n.get("headline", "No Headline")
-        summary = n.get("summary", "No Summary")
-        date_raw = n.get("date", "Unknown Date")
-        date_fmt = _format_date_with_weekday(date_raw)
-        source = n.get("source", "Unknown Source")
-        news_type = n.get("news_type", "unknown")
-        cluster = f"C{cluster_ids[i]}"
-        raw_id = n.get("id")
-        if isinstance(raw_id, int):
-            external_id = str(raw_id)
-        else:
-            external_id = f"IDX_{i}"
-        id_to_idx[external_id] = i
-        news_text += (
-            f"GLOBAL_ID={external_id} LOCAL_INDEX={i} [{date_fmt}] "
-            f"[type={news_type}] [source={source}] [cluster={cluster}] "
-            f"{headline} - {summary}\n"
-        )
+        headline = n.get('headline', 'No Headline')
+        summary = n.get('summary', 'No Summary')
+        date_str = n.get('date', 'Unknown Date') # Renamed to avoid shadowing datetime.date
+        news_text += f"ID {i}: [{date_str}] {headline} - {summary}\n"
 
-    contexts = []
-    if vol_z is not None and vol_z > 2.0:
-        contexts.append(f"EXTREME VOLUME (Z-Score: {vol_z:.1f})")
-    if alpha < -0.02:
-        contexts.append(f"SIGNIFICANT UNDERPERFORMANCE (Alpha: {alpha*100:.2f}%)")
-    elif alpha > 0.02:
-        contexts.append(f"SIGNIFICANT OUTPERFORMANCE (Alpha: {alpha*100:.2f}%)")
+    system_prompt = f"""You are a financial analyst specializing in {symbol}. 
+Your task is to select the {k} most important news items from the provided list that are likely to have the biggest impact on {symbol}'s stock price direction.
+Focus on:
+1. Earnings releases and financial guidance
+2. Major product launches or regulatory approvals
+3. Mergers, acquisitions, and strategic partnerships
+4. Macroeconomic events directly affecting the sector
+5. Significant legal or regulatory actions
 
-    context_header = " + ".join(contexts) if contexts else "NORMAL MARKET CONDITIONS"
-    scenario_lines = [f"CONTEXT: {context_header}"]
-    if alpha < -0.02:
-        scenario_lines.append(
-            "Task: Identify downside catalysts threatening the long-term business model "
-            "(disruption/obsolescence/structural pressure), not generic negativity."
-        )
-    elif alpha > 0.02:
-        scenario_lines.append(
-            "Task: Identify strong positive catalysts "
-            "(upgrades/partnerships/earnings beats/product traction)."
-        )
-    else:
-        scenario_lines.append(
-            "Task: If no major catalyst exists, choose representative context news instead of forced narratives."
-        )
-    if vol_z is not None and vol_z > 2.0:
-        scenario_lines.append(
-            "Priority: Find the specific trigger event behind the unusual trading volume."
-        )
-    scenario_instruction = "\n".join(scenario_lines)
-
-    vol_z_str = f"{vol_z:.1f}" if vol_z is not None else "N/A"
-    week_scope = (
-        f"{period_start_date} to {period_end_date}"
-        if period_start_date and period_end_date
-        else "the provided period"
-    )
-    system_prompt = f"""You are a financial analyst selecting news for {symbol}.
-You are analyzing news for the week of {week_scope}. Your goal is to explain price movement WITHIN THIS SPECIFIC WEEK.
-
-[MARKET DATA]
-- Return: {stock_return*100:.2f}%
-- Alpha: {alpha*100:.2f}%
-- Volume Z: {vol_z_str}
-
-[INSTRUCTIONS]
-{scenario_instruction}
-
-[DIVERSITY & CAUSALITY RULES]
-- Goal: explain causality, not headline popularity.
-- Deduplicate event clusters: if multiple articles describe the same event, keep only the most information-dense one.
-- Prioritize causal chain in this order:
-  1) direct company catalysts, 2) precursor/warning signals, 3) sector/macro context.
-- For k={k}, use slot budget as default:
-  - company-specific: ~60% (about 3/5 when k=5)
-  - sector/peer context: ~20% (about 1/5)
-  - macro/policy context: ~20% (about 1/5)
-- If no strong company catalysts exist, reallocate to sector/macro.
-- If strong macro policy shock exists (e.g., tariffs/regulatory/geopolitics) and it can plausibly affect {symbol},
-  reserve at least one slot for it.
-- Prefer time-ordered evidence: precursor first, then catalyst, then consequence.
-
-[OUTPUT RULES]
-- Select exactly {k} items when at least {k} unique incidents exist; otherwise select all unique incidents.
-- Never return 2 IDs from the same cluster label Cx.
-- Assign a sentiment score (-1 to 1) relative to the stock price impact.
-- Return a JSON list of objects, using GLOBAL_ID values from input.
-- Include a concise "reason" for each selected item.
-- Format strictly: [{{"id": "139187931", "score": -0.9, "reason": "COBOL disruption catalyst"}}, ...]
-"""
+Ignore generic market commentary or minor fluff unless it's the only info available.
+Return ONLY the IDs of the selected news items as a JSON list, e.g., [0, 4, 12]. Do not include any other text."""
 
     try:
         print(f"    [DeepSeek] Ranking {len(valid_news)} news items for {symbol}...", flush=True)
@@ -683,68 +477,25 @@ You are analyzing news for the week of {week_scope}. Your goal is to explain pri
                 {"role": "user", "content": news_text}
             ],
             temperature=0.0,
-            max_tokens=700,
+            max_tokens=100
         )
         response = completion.choices[0].message.content.strip()
         print(f"    [DeepSeek] Response received: {response}", flush=True)
-
-        # Parse JSON response
-        try:
-            # Try parsing as pure JSON first
-            if "```json" in response:
-                response_clean = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                response_clean = response.split("```")[1].split("```")[0].strip()
-            else:
-                response_clean = response
-            selected_items = json.loads(response_clean)
-
-            # Strict parsing: require object entries with id and score.
-            result_news = []
-            used_ids = set()
-            used_clusters = set()
-            for item in selected_items:
-                if isinstance(item, dict) and "id" in item:
-                    score = item.get("score", 0)
-                    reason = item.get("reason", "")
-                    raw_id = str(item["id"]).strip()
-                    idx = None
-                    if raw_id in id_to_idx:
-                        idx = id_to_idx[raw_id]
-                    elif raw_id.isdigit() and raw_id in id_to_idx:
-                        idx = id_to_idx[raw_id]
-                    elif raw_id.startswith("IDX_") and raw_id[4:].isdigit():
-                        local_idx = int(raw_id[4:])
-                        if 0 <= local_idx < len(valid_news):
-                            idx = local_idx
-                    elif raw_id.isdigit():
-                        local_idx = int(raw_id)
-                        if 0 <= local_idx < len(valid_news):
-                            idx = local_idx
-                    if idx is None or idx >= len(valid_news):
-                        continue
-                    score = item.get("score", 0)
-                    cluster_id = cluster_ids[idx]
-                    if idx in used_ids or cluster_id in used_clusters:
-                        continue
-                    news_obj = valid_news[idx].copy()
-                    news_obj["sentiment_score"] = score
-                    if isinstance(reason, str) and reason.strip():
-                        news_obj["selection_reason"] = reason.strip()
-                    result_news.append(news_obj)
-                    used_ids.add(idx)
-                    used_clusters.add(cluster_id)
-
-            return result_news[:k]
-
-        except json.JSONDecodeError as e:
-            raise RuntimeError("LLM response is not valid JSON in rank_news_with_llm.") from e
+        
+        # Extract IDs using regex to be robust
+        ids = [int(x) for x in re.findall(r'\d+', response)]
+        print(f"    [DeepSeek] Parsed IDs: {ids}", flush=True)
+        
+        # Return selected news items in order
+        selected = [valid_news[i] for i in ids if i < len(valid_news)]
+        return selected[:k]
     except Exception as e:
-        raise RuntimeError(f"LLM ranking failed in rank_news_with_llm: {e}") from e
+        print(f"    LLM News Selection Failed: {e}. Falling back to relevance scoring.")
+        return rank_news_by_relevance(news, None)[:k]
 
 
-def get_news(symbol, data, week_mode: str = "fri_fri"):
-    """Fetch company + market news from Finnhub and rank with LLM (DeepSeek)."""
+def get_news(symbol, data):
+    """Fetch company news from Finnhub and rank with LLM (DeepSeek) if available."""
     if finnhub_client is None:
         data['News'] = [json.dumps([])] * len(data)
         return data
@@ -774,145 +525,28 @@ def get_news(symbol, data, week_mode: str = "fri_fri"):
             "Set DEEPSEEK_API_KEY and ensure the DeepSeek API is reachable."
         )
 
-    market_symbol = "QQQ" if symbol in TECH_STOCKS else "SPY"
-    market_name = "Nasdaq-100" if market_symbol == "QQQ" else "S&P 500"
-
-    def _fetch_market_news_target_week(start_date: str) -> list:
-        """
-        Fetch latest market/general news for the target week only.
-        No date filtering is applied; we page backward with min_id up to
-        MARKET_NEWS_MAX_PAGES and rely on Finnhub's own historical limits.
-        Hard stop: never include items older than MARKET_NEWS_MAX_AGE_DAYS.
-        """
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        prev_sunday = (start_dt - timedelta(days=((start_dt.weekday() + 1) % 7))).date()
-        prev_saturday = prev_sunday - timedelta(days=1)
-        cutoff_dt = datetime.now() - timedelta(days=max(0, MARKET_NEWS_MAX_AGE_DAYS))
-        min_id = None
-        seen_ids = set()
-        collected = []
-
-        for page_idx in range(max(1, MARKET_NEWS_MAX_PAGES)):
-            if page_idx == 0 and min_id is None:
-                batch = finnhub_client.general_news(category=MARKET_NEWS_CATEGORY)
-            else:
-                batch = finnhub_client.general_news(category=MARKET_NEWS_CATEGORY, min_id=min_id)
-
-            if not batch:
-                break
-
-            ids_in_batch = []
-            oldest_ts = None
-            for item in batch:
-                item_id = item.get("id")
-                if item_id is not None:
-                    ids_in_batch.append(item_id)
-                    if item_id in seen_ids:
-                        continue
-                    seen_ids.add(item_id)
-
-                ts = item.get("datetime")
-                if isinstance(ts, int):
-                    dt = datetime.fromtimestamp(ts)
-                    if oldest_ts is None or ts < oldest_ts:
-                        oldest_ts = ts
-                    include_item = dt >= cutoff_dt
-                    if week_mode == "mon_fri_preopen":
-                        # For Monday pre-open mode, include weekend only (Saturday + Sunday).
-                        include_item = prev_saturday <= dt.date() <= prev_sunday
-
-                    if include_item:
-                        collected.append(
-                            {
-                                "news_type": "market",
-                                "date": dt.strftime("%Y%m%d%H%M%S"),
-                                "headline": item.get("headline", ""),
-                                "summary": item.get("summary", ""),
-                                "source": item.get("source", ""),
-                                "category": MARKET_NEWS_CATEGORY,
-                            }
-                        )
-
-            if oldest_ts is not None:
-                oldest_dt = datetime.fromtimestamp(oldest_ts)
-                if week_mode == "mon_fri_preopen":
-                    if oldest_dt.date() < prev_saturday:
-                        break
-                elif oldest_dt < cutoff_dt:
-                    break
-
-            if not ids_in_batch:
-                break
-            next_min_id = min(ids_in_batch) - 1
-            if min_id is not None and next_min_id >= min_id:
-                break
-            min_id = next_min_id
-
-        return collected
-
     news_list = []
-    total_rows = len(data)
-    for row_idx, (_, row) in enumerate(data.iterrows()):
+    for _, row in data.iterrows():
         start_date = row['Start Date'].strftime('%Y-%m-%d')
         end_date = row['End Date'].strftime('%Y-%m-%d')
-        is_target_week = row_idx == (total_rows - 1)
         
         try:
             time.sleep(0.5)  # Rate limit
-            company_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
-
-            # Strategy: market news endpoint is only used for the most recent target week.
-            # Historical context remains company-news based.
-            market_news = _fetch_market_news_target_week(start_date) if is_target_week else []
-
-            # Pre-process and merge company + market news
+            weekly_news = finnhub_client.company_news(symbol, _from=start_date, to=end_date)
+            
+            # Pre-process news for our format
             processed_news = []
-            for n in company_news:
+            for n in weekly_news:
                 # Convert timestamp to YYYYMMDDHHMMSS
                 dt_str = datetime.fromtimestamp(n['datetime']).strftime('%Y%m%d%H%M%S')
                 processed_news.append({
-                    "news_type": "company",
                     "date": dt_str,
                     "headline": n.get('headline', ''),
-                    "summary": n.get('summary', ''),
-                    "source": n.get('source', ''),
+                    "summary": n.get('summary', '')
                 })
 
-            processed_news.extend(market_news)
-
-            # Deduplicate by normalized (date, headline) key.
-            deduped = []
-            seen_keys = set()
-            for item in processed_news:
-                key = (
-                    item.get("date", ""),
-                    (item.get("headline", "") or "").strip().lower(),
-                )
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-                deduped.append(item)
-
-            stock_return = (
-                (row['End Price'] - row['Start Price']) / row['Start Price']
-                if row['Start Price'] else 0.0
-            )
-            market_return = market_manager.get_return(market_symbol, start_date, end_date)
-            alpha = stock_return - market_return
-            vol_z_val = market_manager.get_volume_z_score(symbol, end_date)
-            vol_z = float(vol_z_val) if vol_z_val is not None else 0.0
-
-            # Use LLM selection
-            selected_news = rank_news_with_llm(
-                deduped, 5, symbol, llm_client, "deepseek-chat",
-                stock_return=stock_return,
-                market_return=market_return,
-                market_name=market_name,
-                alpha=alpha,
-                vol_z=vol_z,
-                period_start_date=start_date,
-                period_end_date=end_date,
-            )
+            # Use LLM selection (Strategy: only LLM-based ranking is allowed here)
+            selected_news = rank_news_with_llm(processed_news, 5, symbol, llm_client, "deepseek-chat")
             
             # Sort chronologically for the model (oldest to newest)
             selected_news.sort(key=lambda x: x['date'])
@@ -990,7 +624,6 @@ class PromptContext:
     market_name: str
     use_basics: bool
     use_quant_signals: bool
-    week_mode: str
 
 
 class PromptBuilder:
@@ -1042,14 +675,7 @@ class PromptBuilder:
         return self
 
     def add_instruction(self):
-        curday_dt = datetime.strptime(self.context.curday, "%Y-%m-%d")
-        if self.context.week_mode in ["mon_fri", "mon_fri_preopen"]:
-            end_dt = curday_dt + timedelta(days=4)
-        else:
-            end_dt = curday_dt + timedelta(days=7)
-        end_date_str = end_dt.strftime("%Y-%m-%d")
-        period = f"{self.context.curday} to {end_date_str}"
-        
+        period = f"{self.context.curday} to {n_weeks_before(self.context.curday, -1)}"
         instruction = (
             f"Based on all the information before {self.context.curday}, let's first analyze the "
             f"positive developments and potential concerns for {self.context.ticker}. Come up with "
@@ -1122,9 +748,6 @@ def _build_quant_signals_block(ticker: str, row: pd.Series, market_symbol: str, 
     rsi_daily_str = f"{rsi_daily_val:.1f}" if rsi_daily_val is not None else "N/A"
     head += f"- Daily RSI: {rsi_daily_str} ({ta_data.get('rsi_daily_desc', 'N/A')})\n"
     head += f"- Trend: {ta_data.get('trend', 'N/A')}\n"
-    dist_sma200_val = ta_data.get("dist_sma200")
-    dist_sma200_str = f"{dist_sma200_val:+.1f}%" if dist_sma200_val is not None else "N/A"
-    head += f"- Long-Term Trend: {dist_sma200_str} vs SMA200 ({ta_data.get('trend_structure', 'N/A')})\n"
     head += f"- MACD: {ta_data.get('macd', 'N/A')}\n"
 
     dist_sma50_val = ta_data.get("dist_sma50")
@@ -1134,12 +757,12 @@ def _build_quant_signals_block(ticker: str, row: pd.Series, market_symbol: str, 
     return head
 
 
-def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals=True, week_mode="fri_fri"):
+def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals=True):
     """Build the full prompt for the model."""
     steps = [n_weeks_before(curday, n) for n in range(n_weeks + 1)][::-1]
 
     data = get_stock_data(ticker, steps)
-    data = get_news(ticker, data, week_mode=week_mode)
+    data = get_news(ticker, data)
     data["Weekly Returns"] = data.apply(
         lambda row: (row["End Price"] - row["Start Price"]) / row["Start Price"] if row["Start Price"] else 0.0,
         axis=1,
@@ -1155,7 +778,6 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals
         market_name=market_name,
         use_basics=use_basics,
         use_quant_signals=use_quant_signals,
-        week_mode=week_mode,
     )
 
     prompt = (
@@ -1175,15 +797,15 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals
 # INFERENCE
 # ============================================================================
 
-def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_signals=True, week_mode="fri_fri", temperature=0.7):
+def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_signals=True):
     """Generate stock prediction."""
     load_model()  # Ensure model is loaded
     
     if prediction_date is None:
         prediction_date = date.today().strftime("%Y-%m-%d")
     
-    config = _build_generation_config(temperature)
-    prompt = construct_prompt(ticker, prediction_date, n_weeks, use_basics, use_quant_signals, week_mode)
+    config = _build_generation_config()
+    prompt = construct_prompt(ticker, prediction_date, n_weeks, use_basics, use_quant_signals)
 
     inputs = tokenizer(prompt, return_tensors='pt', padding=False)
     input_len = inputs["input_ids"].shape[-1]
@@ -1196,32 +818,17 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
         )
 
     max_new_tokens = min(config.max_new_tokens, available_tokens)
-    min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
     inputs = {key: value.to(model.device) for key, value in inputs.items()}
-    attempts = [
-        (config.temperature, min_completion_tokens),
-        (config.temperature, min(min_completion_tokens, 160)),
-        (config.temperature, min(min_completion_tokens, 128)),
-    ]
-
-    answer = ""
-    for attempt_idx, (attempt_temp, attempt_min_tokens) in enumerate(attempts, start=1):
-        answer = _generate_answer(
-            inputs,
-            max_new_tokens,
-            attempt_min_tokens,
-            attempt_temp,
-            input_len,
-        )
-        if _is_usable_response(answer):
-            break
-        print(
-            f"Warning: generation attempt {attempt_idx} returned incomplete or artifact-heavy output.",
-            flush=True,
-        )
+    answer = _generate_answer(
+        inputs,
+        max_new_tokens,
+        config.min_completion_tokens,
+        config.temperature,
+        input_len,
+    )
 
     if not _is_complete_response(answer):
-        print("Warning: response missing Prediction/Confidence after retries.", flush=True)
+        print("Warning: response missing Prediction/Confidence.", flush=True)
 
     return answer, prompt
 
@@ -1233,11 +840,11 @@ class GenerationConfig:
     temperature: float
 
 
-def _build_generation_config(temperature):
+def _build_generation_config():
     return GenerationConfig(
         max_new_tokens=DEFAULT_MAX_NEW_TOKENS,
         min_completion_tokens=MIN_COMPLETION_TOKENS,
-        temperature=float(temperature),
+        temperature=DEFAULT_TEMPERATURE,
     )
 
 
@@ -1251,23 +858,16 @@ def _get_context_limit():
 
 
 def _generate_answer(inputs, max_new_tokens, min_new_tokens, temperature, input_len):
-    generate_kwargs = dict(
-        **inputs,
-        max_new_tokens=max_new_tokens,
-        min_new_tokens=min_new_tokens,
-        eos_token_id=tokenizer.eos_token_id,
-        use_cache=True,
-    )
-    if temperature > 0:
-        generate_kwargs.update(
+    with torch.no_grad():
+        res = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            min_new_tokens=min_new_tokens,
             do_sample=True,
             temperature=temperature,
+            eos_token_id=tokenizer.eos_token_id,
+            use_cache=True,
         )
-    else:
-        generate_kwargs.update(do_sample=False)
-
-    with torch.no_grad():
-        res = model.generate(**generate_kwargs)
 
     output_ids = res[0]
     answer = _extract_assistant_response(output_ids, input_len)
@@ -1325,29 +925,7 @@ def _clean_answer(text):
         last_idx = lower.rfind("assistant")
         cleaned = cleaned[last_idx + len("assistant"):].strip()
 
-    cleaned = _truncate_artifact_tail(cleaned)
-    return cleaned.strip()
-
-
-def _truncate_artifact_tail(text):
-    if not text:
-        return ""
-
-    artifact_patterns = [
-        r"<\s*/?\s*tool_call\b[^>\n]*>",
-        r"<\s*/?\s*function\b[^>\n]*>",
-        r"<\s*/?\s*assistant_response\b[^>\n]*>",
-        r"<\s*/?\s*analysis\b[^>\n]*>",
-        r"<\s*/?\s*response\b[^>\n]*>",
-    ]
-
-    for pattern in artifact_patterns:
-        artifact_match = re.search(pattern, text, flags=re.IGNORECASE)
-        if artifact_match:
-            text = text[:artifact_match.start()]
-            break
-
-    return text.strip()
+    return cleaned
 
 
 def _env_flag(value):
@@ -1359,16 +937,6 @@ def _is_complete_response(answer):
         return False
     lowered = answer.lower()
     return "prediction:" in lowered and "confidence:" in lowered
-
-
-def _is_usable_response(answer):
-    if not _is_complete_response(answer):
-        return False
-    if "<" in answer and ">" in answer:
-        return False
-    if len(answer.strip()) < 40:
-        return False
-    return True
 
 
 # ============================================================================
@@ -1390,11 +958,6 @@ def handler(event):
         n_weeks = input_data.get("n_weeks", 3)
         use_basics = input_data.get("use_basics", True)
         use_quant_signals = input_data.get("use_quant_signals", True)
-        week_mode = input_data.get("week_mode", "fri_fri")
-        
-        temperature = input_data.get("temperature")
-        if temperature is None:
-            return {"error": "Missing required field: temperature"}
         
         # Generate prediction
         prediction, prompt = predict(
@@ -1402,16 +965,13 @@ def handler(event):
             prediction_date=prediction_date,
             n_weeks=n_weeks,
             use_basics=use_basics,
-            use_quant_signals=use_quant_signals,
-            week_mode=week_mode,
-            temperature=temperature
+            use_quant_signals=use_quant_signals
         )
         
         response = {
             "ticker": ticker.upper(),
             "date": prediction_date or date.today().strftime("%Y-%m-%d"),
-            "prediction": prediction,
-            "adapter_used": ADAPTER_ID
+            "prediction": prediction
         }
         if _env_flag(INCLUDE_PROMPT_IN_RESPONSE):
             response["prompt"] = prompt

@@ -7,17 +7,22 @@ for the prepared market data.
 Supported backends:
 - OpenAI (gpt-3.5-turbo, gpt-4, gpt-4o-mini) - requires OPENAI_API_KEY
 - DeepSeek (deepseek-chat) - requires DEEPSEEK_API_KEY (cheap & good!)
+- OpenRouter (e.g. deepseek/deepseek-v3.2) - requires OPENROUTER_API_KEY
 - Ollama (local, FREE) - requires Ollama running locally
 
 Prerequisites:
 - For OpenAI: Set environment variable OPENAI_API_KEY
 - For DeepSeek: Set environment variable DEEPSEEK_API_KEY
+- For OpenRouter: Set environment variable OPENROUTER_API_KEY
 - For Ollama: Install Ollama and run `ollama pull llama3.1` or `ollama pull mistral`
 - Run prepare_latest_data.py first to generate raw data
 
 Usage:
     # DeepSeek - Cheap & Good (recommended) with parallel processing
     python generate_labels.py --data_dir ./raw_data/2024-01-01_2024-11-01 --backend deepseek --parallel 5
+
+    # OpenRouter with DeepSeek V3.2 for both ranking and labels
+    python generate_labels.py --data_dir ./raw_data/2024-01-01_2024-11-01 --backend openrouter --model deepseek/deepseek-v3.2 --news_strategy llm --parallel 5
     
     # OpenAI option
     python generate_labels.py --data_dir ./raw_data/2024-01-01_2024-11-01 --model gpt-4o-mini --parallel 5
@@ -31,6 +36,7 @@ import re
 import csv
 import json
 import random
+from dataclasses import dataclass
 from datetime import datetime
 import argparse
 import finnhub
@@ -331,7 +337,14 @@ class MarketDataManager:
             
             # SMA Distance
             dist_sma50 = (current_price - sma50) / sma50 * 100
+            dist_sma200 = (current_price - sma200) / sma200 * 100
             reversion_desc = "Overextended" if abs(dist_sma50) > 15 else "Normal"
+            if current_price > sma50 > sma200:
+                trend_structure = "Bullish Stack"
+            elif current_price < sma50 < sma200:
+                trend_structure = "Bearish Stack"
+            else:
+                trend_structure = "Mixed Stack"
             
             return {
                 "rsi_daily": rsi_val, "rsi_daily_desc": rsi_desc,
@@ -339,56 +352,108 @@ class MarketDataManager:
                 "trend": trend, "macd": macd_desc,
                 "vol_z": vol_z, "vol_z_desc": vol_z_desc,
                 "atr": atr, "atr_desc": atr_desc,
-                "dist_sma50": dist_sma50, "reversion_desc": reversion_desc
+                "dist_sma50": dist_sma50, "dist_sma200": dist_sma200,
+                "trend_structure": trend_structure, "reversion_desc": reversion_desc
             }
         except Exception as e:
             return {}
 
 market_manager = MarketDataManager()
 
-SYSTEM_PROMPT = """You are acting as a professional equity analyst.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v3.2"
 
-You will be given:
-- Company profile and basic financials
-- Weekly historical news headlines and short descriptions
-- Weekly price data
-- Quant signals and technical indicators (RSI, MACD, VIX, ATR, volume, mean reversion, alpha vs market)
 
-Your task:
-1. Identify key positive developments from the news/financials.
-2. Identify key negative developments.
-3. Analyze price trend, momentum, and relative performance using the provided quant/technical signals.
-4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
-5. Provide confidence level (0-100%).
+@dataclass(frozen=True)
+class LLMBackendConfig:
+    """Factory result for OpenAI-compatible backends."""
+    client: Optional[OpenAI]
+    model: str
+    display_name: str
 
-Decision rules:
-- Use ONLY the information given.
-- Do NOT reference any future knowledge beyond the cutoff date.
-- The most recent [QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block is the primary signal for the next-week forecast. Older weekly blocks are context, not the final tie-breaker.
-- Follow this signal hierarchy: Technical structure first, flow/relative performance second, news/fundamentals third.
-- Technical structure defines base probability. Strong trend and momentum should outweigh headlines unless the news is a major catalyst.
-- Do not predict UP solely because RSI is oversold. Oversold can remain oversold in a weak tape.
-- If the latest block shows bearish momentum and weak flow together, such as Bearish Crossover plus underperformance vs the market plus weak/normal volume, prefer continuation risk over an immediate rebound unless a strong catalyst clearly changes the setup.
-- If news conflicts with the latest technical structure, explain the divergence explicitly instead of ignoring it.
-- IF NO NEWS ARE PROVIDED: Do not simply say there is no news. Explain the move using market mechanics such as sector rotation, institutional flows, beta-driven index movement, or technical mean reversion/breakout. Be cautious about assuming trend continuation.
-- Mixed or conflicting signals are allowed, but you must still make a clear directional call and lower confidence when conviction is weak.
-- Conclude by labeling the main cause of the forecast as one of: Technical, Flow, Narrative, Mixed, or Unknown.
 
-Output constraints:
-- Output plain text only.
-- Do NOT produce XML, HTML, JSON, markdown code fences, or tool markup.
-- Do NOT output tags such as <tool_call>, </tool_call>, <function>, or similar placeholders.
-- Start the final answer with the exact marker: ### ANSWER START
-- The final answer must include both lines `Prediction:` and `Confidence:` exactly once.
+def _resolve_default_model(backend: str, requested_model: str) -> str:
+    """Return a backend-specific default model when the CLI default is still in use."""
+    if requested_model != "gpt-3.5-turbo":
+        return requested_model
+    if backend == "deepseek":
+        return "deepseek-reasoner"
+    if backend == "openrouter":
+        return DEFAULT_OPENROUTER_MODEL
+    return requested_model
 
-Your answer format must be as follows:
 
-[Answer Start]
-### ANSWER START
+def build_llm_backend(backend: str, requested_model: str) -> LLMBackendConfig:
+    """
+    Factory pattern for LLM backend setup so ranking and label generation
+    can share the same OpenAI-compatible client configuration.
+    """
+    resolved_model = _resolve_default_model(backend, requested_model)
 
-[Prediction]
-Prediction: [UP/DOWN] by [Percentage]%
-Confidence: [Percentage]%
+    if backend == "openai":
+        openai_api_key = os.environ.get("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("Please set OPENAI_API_KEY environment variable")
+        return LLMBackendConfig(
+            client=OpenAI(api_key=openai_api_key),
+            model=resolved_model,
+            display_name="OPENAI",
+        )
+
+    if backend == "deepseek":
+        deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not deepseek_api_key:
+            raise ValueError(
+                "Please set DEEPSEEK_API_KEY environment variable. "
+                "Get it at: https://platform.deepseek.com/"
+            )
+        return LLMBackendConfig(
+            client=OpenAI(
+                api_key=deepseek_api_key,
+                base_url="https://api.deepseek.com",
+            ),
+            model=resolved_model,
+            display_name="DEEPSEEK",
+        )
+
+    if backend == "openrouter":
+        openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not openrouter_api_key:
+            raise ValueError(
+                "Please set OPENROUTER_API_KEY environment variable. "
+                "Get it at: https://openrouter.ai/"
+            )
+        return LLMBackendConfig(
+            client=OpenAI(
+                api_key=openrouter_api_key,
+                base_url=OPENROUTER_BASE_URL,
+            ),
+            model=resolved_model,
+            display_name="OPENROUTER",
+        )
+
+    if backend == "ollama":
+        return LLMBackendConfig(
+            client=None,
+            model=resolved_model,
+            display_name="OLLAMA",
+        )
+
+    raise ValueError(f"Unsupported backend: {backend}")
+
+SYSTEM_PROMPT = """You are a seasoned stock market analyst. Your task is to explain why a stock moved the way it did over the following week using only the information that was available beforehand. Provide a balanced analysis rather than acting as an advocate for the realized outcome.
+
+Important analytical rules:
+- Distinguish between signals that supported the realized move, signals that argued against it, and the factor that most likely dominated in the end.
+- Do not confuse pullback risk, overbought conditions, or oversold conditions with the most likely weekly directional base case.
+- Strong trend structure and persistent relative strength can justify continued upside even when some short-term indicators look stretched.
+- Likewise, strong deterioration in trend, flow, or narrative can justify downside even when some fundamentals still look solid.
+- If the realized move conflicts with some indicators, explain the conflict explicitly instead of forcing all evidence to point in the same direction.
+- Treat the latest quantitative block as the most important context, while older weeks provide supporting background.
+- If the realized move was small or the evidence was mixed, frame the setup as low conviction and explicitly acknowledge the higher uncertainty instead of presenting it as a clean, high-confidence call.
+- Reserve strong conviction language for cases where trend, flow, and narrative materially align.
+
+Your answer format should be as follows:
 
 [Positive Developments]:
 1. ...
@@ -396,11 +461,28 @@ Confidence: [Percentage]%
 [Potential Concerns]:
 1. ...
 
-[Prediction & Analysis]
-Analysis: ...
+[Prediction & Analysis]:
+...
 
 [Primary Driver]:
-Technical | Flow | Narrative | Mixed | Unknown"""
+Technical | Flow | Narrative | Mixed | Unknown
+
+[Primary Driver Rationale]:
+1-2 concise sentences explaining why that driver dominated.
+
+Follow this analytical hierarchy:
+1. Technical Reality: Technical indicators (RSI, MACD, SMA50, SMA200) define the boundaries of what is possible. Use SMA200 as long-term regime context, so short-term bearish signals inside a strong bullish structure are usually lower-conviction pullback risks unless other evidence clearly confirms deterioration. Do not predict a rally if the stock is extremely overextended without a massive catalyst.
+2. Relative Performance: Always consider Alpha. If the stock is underperforming its index despite good news, look for hidden weaknesses.
+3. News Catalyst: Use news to explain the 'Why', but never let news justify a lie about the 'What' (the technical data).
+4. Dealing with "No News": If there are no specific company news but the price moved significantly, do NOT just say "absence of news". Instead, explicitly analyze the move as driven by market mechanics (e.g., "sector-level repricing", "institutional flows indicated by Volume Z-Score", "beta-driven momentum", or "technical breakout"). Avoid vague language; ascribe the move to market flows or technical structure if fundamental catalysts are missing.
+5. Primary Driver: Conclude your analysis by categorizing the main cause of the move into one of these tags:
+   - Technical: Move driven by chart patterns, oversold/bought conditions, or mean reversion.
+   - Flow: Move driven by volume, sector rotation, or broad market correlation (beta).
+   - Narrative: Move driven by specific company news, earnings, or macro events directly impacting the thesis.
+   - Mixed: A combination of strong news and technical setup.
+   - Unknown: No clear reason found.
+6. Primary Driver Rationale: After choosing the tag, add a short rationale explaining why that specific driver dominated over the competing signals. Keep it to 1-2 sentences and do not change the driver tag format.
+"""
 
 
 def append_empty_reason_log(
@@ -500,6 +582,9 @@ def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, m
     rsi_daily_str = f"{rsi_daily_val:.1f}" if rsi_daily_val is not None else "N/A"
     head += f"- Daily RSI: {rsi_daily_str} ({ta_data.get('rsi_daily_desc', 'N/A')})\\n"
     head += f"- Trend: {ta_data.get('trend', 'N/A')}\\n"
+    dist_sma200_val = ta_data.get('dist_sma200')
+    dist_sma200_str = f"{dist_sma200_val:+.1f}%" if dist_sma200_val is not None else "N/A"
+    head += f"- Long-Term Trend: {dist_sma200_str} vs SMA200 ({ta_data.get('trend_structure', 'N/A')})\\n"
     head += f"- MACD: {ta_data.get('macd', 'N/A')}\\n"
     
     # Mean Reversion - handle None values
@@ -1051,6 +1136,65 @@ def map_bin_label(bin_lb: str) -> str:
     return lb
 
 
+def is_noise_move(weekly_return: float, noise_band_pct: float) -> bool:
+    """Return True when weekly move is small enough to treat as noise."""
+    try:
+        return abs(float(weekly_return) * 100.0) <= float(noise_band_pct)
+    except Exception:
+        return False
+
+
+def normalize_primary_driver(primary_driver: str) -> str:
+    """Normalize free-form model output to stable driver classes."""
+    if not primary_driver:
+        return "Unknown"
+
+    cleaned = re.sub(r'[*_`]+', '', str(primary_driver)).strip().lower()
+    if "mixed" in cleaned:
+        return "Mixed"
+    if "narrative" in cleaned:
+        return "Narrative"
+    if "flow" in cleaned:
+        return "Flow"
+    if "technical" in cleaned:
+        return "Technical"
+    return "Unknown"
+
+
+def extract_primary_driver_fields(answer: str) -> Tuple[str, str]:
+    """Extract normalized primary driver and its short rationale."""
+    if not answer:
+        return "Unknown", ""
+
+    raw_driver = "Unknown"
+    rationale = ""
+
+    try:
+        driver_match = re.search(
+            r"\[Primary Driver\]:\s*(.+?)(?:\n\s*\[Primary Driver Rationale\]:|\Z)",
+            answer,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if driver_match:
+            raw_driver = driver_match.group(1).strip().split('\n')[0].strip()
+    except Exception:
+        pass
+
+    try:
+        rationale_match = re.search(
+            r"\[Primary Driver Rationale\]:\s*(.+?)(?:\n\s*\[[^\n]+\]:|\Z)",
+            answer,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if rationale_match:
+            rationale = rationale_match.group(1).strip()
+            rationale = re.sub(r"\s+", " ", rationale).strip()
+    except Exception:
+        pass
+
+    return normalize_primary_driver(raw_driver), rationale
+
+
 def get_all_prompts(
     finnhub_client, 
     symbol: str, 
@@ -1063,7 +1207,8 @@ def get_all_prompts(
     model: str = "", # Pass model name down
     parallel: int = 1, # Added parallel support
     pre_filter_client = None,
-    pre_filter_model: str = ""
+    pre_filter_model: str = "",
+    noise_band_pct: float = 0.0,
 ) -> list:
     """
     Generate all prompts for a symbol from the prepared data.
@@ -1180,15 +1325,24 @@ def get_all_prompts(
         prompt_str = ""
         prompt_str += "\\n".join(prompt_parts)
         
+        if noise_band_pct > 0 and is_noise_move(p_row["stock_ret"], noise_band_pct):
+            return None
+
         prediction = map_bin_label(p_row["bin_label"])
+        realized_return_pct = p_row["stock_ret"] * 100.0
         
         # Build final prompt string
         full_prompt = company_prompt + '\\n' + prompt_str + '\\n' + p_row["basics"]
         full_prompt += f"\\n\\nBased on all the information before {p_row['start_date']}, first analyze the positive developments and potential concerns for {symbol}. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. "
-        full_prompt += "Use the most recent [QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block as the primary basis for the next-week forecast; older weeks are context only. "
-        full_prompt += f"Then let's assume your prediction for next week ({p_row['start_date']} to {p_row['end_date']}) is {prediction}. Provide a summary analysis to support that prediction. Before writing the analysis, cross-reference the latest [QUANT SIGNALS] with the [NEWS]. Technical structure should carry the most weight, flow/relative performance should confirm or weaken conviction, and news should provide the narrative context. "
-        full_prompt += "Do not justify an UP prediction only because RSI is oversold. If the latest signals show bearish momentum plus underperformance versus the market, treat continuation risk as the default unless a strong catalyst clearly overrides it. "
-        full_prompt += f"If the assumed prediction is {prediction} but the technicals show a conflict, explain this divergence logically rather than ignoring the data. The prediction should be supported by the analysis rather than used as a foundational reason. Conclude with a [Primary Driver] tag using one of Technical, Flow, Narrative, Mixed, or Unknown. Return plain text only and never output <tool_call> or similar markup."
+        full_prompt += f"The actual outcome for next week ({p_row['start_date']} to {p_row['end_date']}) was {prediction} with a realized return of {realized_return_pct:+.2f}%. Provide a balanced post-event analysis explaining why this occurred. "
+        full_prompt += "Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. Identify which signals supported the realized move, which signals argued against it, and which factor most likely dominated in the end. "
+        full_prompt += "Do not simply advocate for the realized outcome. Distinguish between pullback risk and the most likely weekly directional base case. "
+        full_prompt += "Use SMA200 and the broader trend structure to distinguish short-term pullback risk from a true regime breakdown. "
+        full_prompt += "If the realized outcome was UP despite overbought conditions or short-term bearish signals, explain it as regime resilience, momentum continuation, flow strength, or narrative dominance only when the evidence supports that. "
+        full_prompt += "If the realized outcome was DOWN despite a strong uptrend or bullish narrative, explain why the bearish signals were strong enough to overwhelm the prevailing trend. "
+        full_prompt += "If the outcome conflicts with some technicals, explain the divergence logically rather than forcing all evidence into one direction. The realized outcome should be explained, not used as a foundational reason by itself. "
+        full_prompt += "If the realized return was small or the setup was mixed, explicitly describe it as a lower-confidence, noisier case and avoid overstating certainty. "
+        full_prompt += "End with the exact fields [Primary Driver] using only one of Technical, Flow, Narrative, Mixed, or Unknown, followed by [Primary Driver Rationale] in 1-2 concise sentences."
 
         return (full_prompt.strip(), prediction, p_row['start_date'], p_row['end_date'])
 
@@ -1236,15 +1390,25 @@ def initialize_csv(filename: str):
     """Initialize CSV file with headers."""
     with open(filename, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        writer.writerow(["prompt", "answer", "prediction", "start_date", "end_date", "index", "primary_driver"])
+        writer.writerow(["prompt", "answer", "prediction", "start_date", "end_date", "index", "primary_driver", "primary_driver_rationale"])
 
 
-def append_to_csv(filename: str, prompt: str, answer: str, prediction: str, start_date: str, end_date: str, index: int = 0, primary_driver: str = "Unknown"):
+def append_to_csv(
+    filename: str,
+    prompt: str,
+    answer: str,
+    prediction: str,
+    start_date: str,
+    end_date: str,
+    index: int = 0,
+    primary_driver: str = "Unknown",
+    primary_driver_rationale: str = "",
+):
     """Append a row to the CSV file (thread-safe)."""
     with csv_lock:
         with open(filename, mode='a', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            writer.writerow([prompt, answer, prediction, start_date, end_date, index, primary_driver])
+            writer.writerow([prompt, answer, prediction, start_date, end_date, index, primary_driver, primary_driver_rationale])
 
 
 def query_ollama(prompt: str, system_prompt: str, model: str = "llama3.1", base_url: str = "http://localhost:11434") -> str:
@@ -1287,7 +1451,7 @@ def process_single_prompt(
             if backend == "ollama":
                 answer = query_ollama(prompt, SYSTEM_PROMPT, model)
             else:
-                # OpenAI / DeepSeek backend (same API format)
+                # OpenAI-compatible backend (OpenAI / DeepSeek / OpenRouter)
                 kwargs = {
                     "model": model,
                     "messages": [
@@ -1309,19 +1473,19 @@ def process_single_prompt(
                 if answer and "<think>" in answer:
                     answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
             
-            # Extract Primary Driver using Regex
-            primary_driver = "Unknown"
-            try:
-                # Matches [Primary Driver]: Technical (or similar)
-                match = re.search(r"\[Primary Driver\]:\s*(.*)", answer, re.IGNORECASE)
-                if match:
-                    primary_driver = match.group(1).strip()
-                    # Clean up if model added extra punctuation
-                    primary_driver = primary_driver.split('\n')[0].strip()
-            except:
-                pass
+            primary_driver, primary_driver_rationale = extract_primary_driver_fields(answer)
 
-            append_to_csv(csv_file, prompt, answer, prediction, str(start_date), str(end_date), index, primary_driver)
+            append_to_csv(
+                csv_file,
+                prompt,
+                answer,
+                prediction,
+                str(start_date),
+                str(end_date),
+                index,
+                primary_driver,
+                primary_driver_rationale,
+            )
             return (index, True)
         except Exception as e:
             if attempt < 4:
@@ -1329,7 +1493,7 @@ def process_single_prompt(
                 time.sleep(2 ** attempt)  # Exponential backoff
             else:
                 print(f"\\n    FAILED {symbol}-{index} after 5 retries: {e}")
-                append_to_csv(csv_file, prompt, "", prediction, str(start_date), str(end_date), index, "Unknown")
+                append_to_csv(csv_file, prompt, "", prediction, str(start_date), str(end_date), index, "Unknown", "")
                 return (index, False)
     
     return (index, False)
@@ -1348,7 +1512,8 @@ def query_llm(
     parallel: int = 1,  # Number of parallel requests
     news_strategy: str = "relevant",
     pre_filter_client = None,
-    pre_filter_model: str = ""
+    pre_filter_model: str = "",
+    noise_band_pct: float = 0.0,
 ) -> Dict[str, Any]:
     """
     Query LLM to generate analysis for all prompts of a symbol.
@@ -1386,7 +1551,8 @@ def query_llm(
         model=model,
         parallel=parallel,  # Pass parallel arg
         pre_filter_client=pre_filter_client,
-        pre_filter_model=pre_filter_model
+        pre_filter_model=pre_filter_model,
+        noise_band_pct=noise_band_pct,
     )
     
     if not prompts:
@@ -1458,10 +1624,10 @@ def main():
     parser.add_argument('--symbols', type=str, default='all',
                         help='Comma-separated symbols or "all" for all in data_dir')
     parser.add_argument('--backend', type=str, default='openai',
-                        choices=['openai', 'ollama', 'deepseek'],
-                        help='LLM backend: openai, deepseek (cheap & good!), or ollama (FREE local)')
+                        choices=['openai', 'ollama', 'deepseek', 'openrouter'],
+                        help='LLM backend: openai, deepseek, openrouter, or ollama (FREE local)')
     parser.add_argument('--model', type=str, default='gpt-3.5-turbo',
-                        help='Model name. OpenAI: gpt-4o-mini. DeepSeek: deepseek-chat. Ollama: llama3.1')
+                        help='Model name. OpenAI: gpt-4o-mini. DeepSeek: deepseek-chat/reasoner. OpenRouter: deepseek/deepseek-v3.2. Ollama: llama3.1')
     parser.add_argument('--min_weeks', type=int, default=1, help='Minimum past weeks of context')
     parser.add_argument('--max_weeks', type=int, default=4, help='Maximum past weeks of context')
     parser.add_argument('--no_basics', action='store_true', help='Process nobasics files')
@@ -1472,27 +1638,19 @@ def main():
                         help='How to pick news snippets: relevant (ranked), random, or llm (DeepSeek picks)')
     parser.add_argument('--pre_filter', action='store_true',
                         help='Use cheap model (Gemini/OpenRouter) to filter 80%% of news before DeepSeek')
+    parser.add_argument('--noise_band_pct', type=float, default=0.0,
+                        help='Skip training labels whose absolute weekly move is within this percent band (e.g. 0.75)')
     args = parser.parse_args()
     
     # Setup backend
-    openai_client = None
-    if args.backend == "openai":
-        openai_api_key = os.environ.get("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError("Please set OPENAI_API_KEY environment variable")
-        openai_client = OpenAI(api_key=openai_api_key)
-    elif args.backend == "deepseek":
-        deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if not deepseek_api_key:
-            raise ValueError("Please set DEEPSEEK_API_KEY environment variable. Get it at: https://platform.deepseek.com/")
-        openai_client = OpenAI(
-            api_key=deepseek_api_key,
-            base_url="https://api.deepseek.com"
-        )
-        # Default to deepseek-reasoner if no model specified
-        if args.model == "gpt-3.5-turbo":
-            args.model = "deepseek-reasoner"
+    backend_config = build_llm_backend(args.backend, args.model)
+    openai_client = backend_config.client
+    args.model = backend_config.model
+
+    if args.backend == "deepseek":
         print(f"Using DeepSeek API with model: {args.model}")
+    elif args.backend == "openrouter":
+        print(f"Using OpenRouter with model: {args.model}")
     elif args.backend == "ollama":
         # Test Ollama connection
         try:
@@ -1550,13 +1708,20 @@ def main():
     print("=" * 60)
     print("FinGPT Forecaster - Label Generation (PARALLEL)")
     print("=" * 60)
-    backend_note = " (FREE!)" if args.backend == "ollama" else " (Cheap & Good!)" if args.backend == "deepseek" else ""
-    print(f"Backend: {args.backend.upper()}{backend_note}")
+    backend_note = ""
+    if args.backend == "ollama":
+        backend_note = " (FREE!)"
+    elif args.backend == "deepseek":
+        backend_note = " (Direct API)"
+    elif args.backend == "openrouter":
+        backend_note = " (via OpenRouter)"
+    print(f"Backend: {backend_config.display_name}{backend_note}")
     print(f"Model: {args.model}")
     print(f"Parallel: {args.parallel} concurrent requests")
     print(f"Data Directory: {args.data_dir}")
     print(f"Symbols: {len(symbols)} companies")
     print(f"Context: {args.min_weeks}-{args.max_weeks} weeks")
+    print(f"Noise band: +/-{args.noise_band_pct:.2f}%")
     print("=" * 60)
     
     failed_symbols: List[str] = []
@@ -1569,7 +1734,8 @@ def main():
                 args.min_weeks, args.max_weeks, with_basics, args.model, args.backend,
                 args.parallel, args.news_strategy,
                 pre_filter_client=pre_filter_client,
-                pre_filter_model=pre_filter_model
+                pre_filter_model=pre_filter_model,
+                noise_band_pct=args.noise_band_pct,
             )
             if result.get("failed_prompts", 0) > 0:
                 failed_symbols.append(symbol)
