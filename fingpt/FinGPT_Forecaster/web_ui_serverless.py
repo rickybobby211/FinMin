@@ -19,20 +19,20 @@ import concurrent.futures
 # RunPod Configuration
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
-# Trained tickers (Dow 30 subset used in this project)
+# Trained tickers (subset used in this project)
 TRAINED_TICKERS = [
     "AAPL",
     "AMZN",
-    "CRM",
-    "CSCO",
+    "CAT",
+    "CVX",
     "GOOGL",
-    "IBM",
-    "INTC",
-    "META",
+    "HD",
+    "JPM",
     "MSFT",
     "NVDA",
-    "TSLA",
-    "TSM",
+    "PG",
+    "UNH",
+    "WMT",
 ]
 
 # Try to get API KEY from Streamlit secrets, environment variable, or fallback
