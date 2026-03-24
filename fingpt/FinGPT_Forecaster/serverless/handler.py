@@ -69,6 +69,11 @@ Constraints:
 - Do NOT reference any future knowledge beyond the cutoff date.
 - IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
 - Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+- Alpha Dominance & Truth-Teller: If a stock outperforms its index (Positive Alpha), respect this relative strength. Conversely, if a stock rises but has Negative Alpha (underperforming the market), this is the ultimate warning sign of underlying weakness; you must lower your confidence regardless of positive news.
+- Ignore Minor Noise (Priced-in): Minor news (like executive sales, analyst updates, or older risks) are often "priced in". Do not flip your prediction based on them unless accompanied by a massive surge in Volume (Volume Z-Score > 1.0).
+- Recency Bias & Priced-in Logic: The market prices in news very quickly. For news older than 3 days, assume the initial shock is already 'priced in' to the current stock price. However, if the stock is still showing a massive Volume Z-Score (>1.0) and strong directional momentum today, the market is still actively reacting to that narrative. If volume has returned to normal, the news is dead and should not drive your prediction.
+- RSI Warning & Distribution: Extreme RSI (>75 or <25) is a severe warning light, not an absolute veto. If you predict continuation against extreme RSI, you MUST explicitly justify why the narrative or flow is strong enough to override technical exhaustion. Furthermore, if news is extremely positive but the stock fails to rise (or has negative Alpha), identify this as 'Distribution' (smart money selling).
+- Hard Confidence Cap: Your confidence MUST NEVER exceed 60% if you identify 'Distribution', 'Divergence', 'Mixed Signals', or if you are predicting continuation against an extreme RSI warning.
 
 Your answer format must be as follows:
 
@@ -939,7 +944,14 @@ def get_company_prompt(symbol):
         if not profile:
             return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
         
-        template = "[Company Introduction]:\n\n{name} is a leading entity in the {finnhubIndustry} sector. As of today, {name} has a market capitalization of {marketCapitalization:.2f} in {currency}.\n\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}."
+        template = (
+            "[Company Introduction]:\n\n{name} is a leading entity in the {finnhubIndustry} sector. "
+            "Incorporated and publicly traded since {ipo}, the company has established its reputation "
+            "as one of the key players in the market. As of today, {name} has a market capitalization "
+            "of {marketCapitalization:.2f} in {currency}, with {shareOutstanding:.2f} shares outstanding."
+            "\n\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}. "
+            "As a dominant force in the {finnhubIndustry} space, the company continues to innovate and drive progress within the industry."
+        )
         return template.format(**profile)
     except:
         return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
@@ -1078,8 +1090,15 @@ def _format_news_block(row: pd.Series, no_news_text: str = "No relative news rep
         for n in news[:5]:
             headline = (n.get("headline") or "").strip()
             summary = (n.get("summary") or "").strip()
+            
+            score_str = ""
+            if "sentiment_score" in n:
+                score = n["sentiment_score"]
+                sign = "+" if score > 0 else ""
+                score_str = f" (Sentiment: {sign}{score:.2f})"
+                
             if headline and summary:
-                formatted.append(f"[Headline]: {headline}\n[Summary]: {summary}\n")
+                formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
     return "\n".join(formatted) if formatted else no_news_text
 
 
@@ -1195,7 +1214,7 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
             "Reduce history/news or increase context window."
         )
 
-    max_new_tokens = min(config.max_new_tokens, available_tokens)
+    max_new_tokens = min(max(config.max_new_tokens, 1024), available_tokens)
     min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
     inputs = {key: value.to(model.device) for key, value in inputs.items()}
     attempts = [
@@ -1242,12 +1261,22 @@ def _build_generation_config(temperature):
 
 
 def _get_context_limit():
-    max_len = getattr(tokenizer, "model_max_length", None)
-    if not max_len or max_len > 100000:
-        max_len = getattr(getattr(model, "config", None), "max_position_embeddings", None)
-    if not max_len or max_len > 100000:
-        max_len = 8192
-    return int(max_len)
+    env_limit = os.environ.get("MAX_CONTEXT_LIMIT")
+    if env_limit:
+        return int(env_limit)
+        
+    # Prefer model config's max_position_embeddings over tokenizer's model_max_length
+    # as tokenizer configs sometimes have incorrect/small defaults (e.g. 4096)
+    max_len = getattr(getattr(model, "config", None), "max_position_embeddings", None)
+    
+    if not max_len or max_len > 200000:
+        max_len = getattr(tokenizer, "model_max_length", None)
+        
+    if not max_len or max_len > 200000:
+        max_len = 32768
+        
+    # Cap at 32768 to avoid OOM on typical RunPod instances
+    return min(int(max_len), 32768)
 
 
 def _generate_answer(inputs, max_new_tokens, min_new_tokens, temperature, input_len):
