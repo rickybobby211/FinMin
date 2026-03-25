@@ -39,6 +39,8 @@ ADAPTER_ID = os.environ.get("ADAPTER_PATH")
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "32768"))
 MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "192"))
 SAFE_MIN_COMPLETION_TOKENS = int(os.environ.get("SAFE_MIN_COMPLETION_TOKENS", "192"))
+MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "192"))
+SAFE_MIN_COMPLETION_TOKENS = int(os.environ.get("SAFE_MIN_COMPLETION_TOKENS", "192"))
 ANSWER_START_MARKER = "### ANSWER START"
 INCLUDE_PROMPT_IN_RESPONSE = os.environ.get("INCLUDE_PROMPT_IN_RESPONSE", "0")
 TECH_STOCKS = {"AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"}
@@ -95,6 +97,10 @@ Confidence: [Percentage]%
 Analysis: ...
 
 [Primary Driver]:
+Technical | Flow | Narrative | Mixed | Unknown
+
+[Primary Driver Rationale]:
+1-2 concise sentences explaining why that driver dominates."""
 Technical | Flow | Narrative | Mixed | Unknown
 
 [Primary Driver Rationale]:
@@ -270,7 +276,14 @@ class MarketDataManager:
 
             dist_sma50 = (current_price - sma50) / sma50 * 100
             dist_sma200 = (current_price - sma200) / sma200 * 100
+            dist_sma200 = (current_price - sma200) / sma200 * 100
             reversion_desc = "Overextended" if abs(dist_sma50) > 15 else "Normal"
+            if current_price > sma50 > sma200:
+                trend_structure = "Bullish Stack"
+            elif current_price < sma50 < sma200:
+                trend_structure = "Bearish Stack"
+            else:
+                trend_structure = "Mixed Stack"
             if current_price > sma50 > sma200:
                 trend_structure = "Bullish Stack"
             elif current_price < sma50 < sma200:
@@ -289,6 +302,8 @@ class MarketDataManager:
                 "atr": atr,
                 "atr_desc": atr_desc,
                 "dist_sma50": dist_sma50,
+                "dist_sma200": dist_sma200,
+                "trend_structure": trend_structure,
                 "dist_sma200": dist_sma200,
                 "trend_structure": trend_structure,
                 "reversion_desc": reversion_desc,
@@ -959,6 +974,14 @@ def get_company_prompt(symbol):
             "\n\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}. "
             "As a dominant force in the {finnhubIndustry} space, the company continues to innovate and drive progress within the industry."
         )
+        template = (
+            "[Company Introduction]:\n\n{name} is a leading entity in the {finnhubIndustry} sector. "
+            "Incorporated and publicly traded since {ipo}, the company has established its reputation "
+            "as one of the key players in the market. As of today, {name} has a market capitalization "
+            "of {marketCapitalization:.2f} in {currency}, with {shareOutstanding:.2f} shares outstanding."
+            "\n\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}. "
+            "As a dominant force in the {finnhubIndustry} space, the company continues to innovate and drive progress within the industry."
+        )
         return template.format(**profile)
     except:
         return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
@@ -1108,7 +1131,15 @@ def _format_news_block(row: pd.Series, no_news_text: str = "No relative news rep
                 sign = "+" if score > 0 else ""
                 score_str = f" (Sentiment: {sign}{score:.2f})"
                 
+            
+            score_str = ""
+            if "sentiment_score" in n:
+                score = n["sentiment_score"]
+                sign = "+" if score > 0 else ""
+                score_str = f" (Sentiment: {sign}{score:.2f})"
+                
             if headline and summary:
+                formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
                 formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
     return "\n".join(formatted) if formatted else no_news_text
 
@@ -1152,6 +1183,9 @@ def _build_quant_signals_block(ticker: str, row: pd.Series, market_symbol: str, 
     rsi_daily_str = f"{rsi_daily_val:.1f}" if rsi_daily_val is not None else "N/A"
     head += f"- Daily RSI: {rsi_daily_str} ({ta_data.get('rsi_daily_desc', 'N/A')})\n"
     head += f"- Trend: {ta_data.get('trend', 'N/A')}\n"
+    dist_sma200_val = ta_data.get("dist_sma200")
+    dist_sma200_str = f"{dist_sma200_val:+.1f}%" if dist_sma200_val is not None else "N/A"
+    head += f"- Long-Term Trend: {dist_sma200_str} vs SMA200 ({ta_data.get('trend_structure', 'N/A')})\n"
     dist_sma200_val = ta_data.get("dist_sma200")
     dist_sma200_str = f"{dist_sma200_val:+.1f}%" if dist_sma200_val is not None else "N/A"
     head += f"- Long-Term Trend: {dist_sma200_str} vs SMA200 ({ta_data.get('trend_structure', 'N/A')})\n"
@@ -1227,7 +1261,30 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
 
     max_new_tokens = min(max(config.max_new_tokens, 1024), available_tokens)
     min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
+    max_new_tokens = min(max(config.max_new_tokens, 1024), available_tokens)
+    min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
     inputs = {key: value.to(model.device) for key, value in inputs.items()}
+    attempts = [
+        (config.temperature, min_completion_tokens),
+        (config.temperature, min(min_completion_tokens, 160)),
+        (config.temperature, min(min_completion_tokens, 128)),
+    ]
+
+    answer = ""
+    for attempt_idx, (attempt_temp, attempt_min_tokens) in enumerate(attempts, start=1):
+        answer = _generate_answer(
+            inputs,
+            max_new_tokens,
+            attempt_min_tokens,
+            attempt_temp,
+            input_len,
+        )
+        if _is_usable_response(answer):
+            break
+        print(
+            f"Warning: generation attempt {attempt_idx} returned incomplete or artifact-heavy output.",
+            flush=True,
+        )
     attempts = [
         (config.temperature, min_completion_tokens),
         (config.temperature, min(min_completion_tokens, 160)),
@@ -1251,6 +1308,7 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
         )
 
     if not _is_complete_response(answer):
+        print("Warning: response missing Prediction/Confidence after retries.", flush=True)
         print("Warning: response missing Prediction/Confidence after retries.", flush=True)
 
     return answer, prompt
@@ -1288,9 +1346,42 @@ def _get_context_limit():
         
     # Cap at 32768 to avoid OOM on typical RunPod instances
     return min(int(max_len), 32768)
+    env_limit = os.environ.get("MAX_CONTEXT_LIMIT")
+    if env_limit:
+        return int(env_limit)
+        
+    # Prefer model config's max_position_embeddings over tokenizer's model_max_length
+    # as tokenizer configs sometimes have incorrect/small defaults (e.g. 4096)
+    max_len = getattr(getattr(model, "config", None), "max_position_embeddings", None)
+    
+    if not max_len or max_len > 200000:
+        max_len = getattr(tokenizer, "model_max_length", None)
+        
+    if not max_len or max_len > 200000:
+        max_len = 32768
+        
+    # Cap at 32768 to avoid OOM on typical RunPod instances
+    return min(int(max_len), 32768)
 
 
 def _generate_answer(inputs, max_new_tokens, min_new_tokens, temperature, input_len):
+    generate_kwargs = dict(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        min_new_tokens=min_new_tokens,
+        eos_token_id=tokenizer.eos_token_id,
+        use_cache=True,
+    )
+    if temperature > 0:
+        generate_kwargs.update(
+            do_sample=True,
+            temperature=temperature,
+        )
+    else:
+        generate_kwargs.update(do_sample=False)
+
+    with torch.no_grad():
+        res = model.generate(**generate_kwargs)
     generate_kwargs = dict(
         **inputs,
         max_new_tokens=max_new_tokens,
@@ -1388,6 +1479,29 @@ def _truncate_artifact_tail(text):
             break
 
     return text.strip()
+    cleaned = _truncate_artifact_tail(cleaned)
+    return cleaned.strip()
+
+
+def _truncate_artifact_tail(text):
+    if not text:
+        return ""
+
+    artifact_patterns = [
+        r"<\s*/?\s*tool_call\b[^>\n]*>",
+        r"<\s*/?\s*function\b[^>\n]*>",
+        r"<\s*/?\s*assistant_response\b[^>\n]*>",
+        r"<\s*/?\s*analysis\b[^>\n]*>",
+        r"<\s*/?\s*response\b[^>\n]*>",
+    ]
+
+    for pattern in artifact_patterns:
+        artifact_match = re.search(pattern, text, flags=re.IGNORECASE)
+        if artifact_match:
+            text = text[:artifact_match.start()]
+            break
+
+    return text.strip()
 
 
 def _env_flag(value):
@@ -1398,6 +1512,21 @@ def _is_complete_response(answer):
     if not answer:
         return False
     lowered = answer.lower()
+    return (
+        "prediction:" in lowered
+        and "confidence:" in lowered
+        and "primary driver" in lowered
+    )
+
+
+def _is_usable_response(answer):
+    if not _is_complete_response(answer):
+        return False
+    if "<" in answer and ">" in answer:
+        return False
+    if len(answer.strip()) < 40:
+        return False
+    return True
     return (
         "prediction:" in lowered
         and "confidence:" in lowered

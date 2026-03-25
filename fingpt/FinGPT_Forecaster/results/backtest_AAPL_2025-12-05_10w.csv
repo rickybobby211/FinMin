@@ -1,0 +1,2018 @@
+date,prediction,actual,pct_change,start_price,end_price,correct,has_news,adapter,full_text,prompt_input,full_prompt
+2025-12-05,UP,DOWN,-0.17935289475572136,278.78,278.28,False,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: UP by 2.5%
+Confidence: 75%
+
+[Positive Developments]:
+1. **China Smartphone Market Growth**: Apple gained significant market share in China due to strong iPhone 17 sales, indicating robust demand.
+2. **Analyst Upgrades**: Despite mixed ratings, analysts have raised price targets, suggesting underlying optimism about the company’s prospects.
+3. **Resilience to Memory Price Rises**: Apple is well-positioned to handle memory cost increases, mitigating potential profitability risks.
+
+[Potential Concerns]:
+1. **Job Cuts**: Apple announced job cuts across its sales teams, signaling internal restructuring challenges.
+2. **Antitrust Investigations**: Ongoing investigations in Poland and India pose regulatory risks and potential financial penalties.
+3. **Executive Departures**: Loss of key executives like General Counsel and Policy Head could affect strategic decision-making and operational stability.
+
+[Prediction & Analysis]
+Analysis: Despite some negative news around job cuts and antitrust investigations, the overall sentiment remains positive. Apple’s strong performance in the Chinese market and analyst upgrades suggest continued investor confidence. Technically, the stock is in a strong uptrend with a bullish crossover on the MACD, indicating momentum. However, the RSI is overbought, suggesting some potential for a pullback. Given the positive news and strong fundamentals, the upward trend is expected to continue, albeit with caution. The predicted price increase of 2.5% reflects a balanced view of the bullish trend and the need for some consolidation. The confidence level is moderately high due to the strong uptrend and positive developments, but slightly reduced due to the overbought condition and ongoing regulatory risks.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2025-12-05"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.34% (272.16 -> 271.24)
+- Alpha vs Nasdaq-100: +2.75% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: 0.8)
+- Volatility (ATR): 5.95 (Normal)
+- Weekly RSI (Trend Strength): 73.6 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 54.7 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +20.0% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 4.6% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple Gains 25% Share of China Smartphone Market on iPhone 17 Demand
+[Summary]: Apple captured a quarter of China's smartphone market in October as sales of the iPhone 17 series accelerated.
+
+[Headline]: Barclays Raises the PT on Apple Inc (AAPL), Keeps a Sell Rating
+[Summary]: ​Apple Inc. (NASDAQ:AAPL) is one of the Most Profitable Stocks to Buy Now. On November 18, Tim Long from Barclays raised the firm’s price target on Apple Inc. (NASDAQ:AAPL) from $180 to $230, but maintained a Sell rating. A day earlier, on November 17, Brandon Nispel from KeyBanc reiterated a Hold rating on the stock, […]
+
+[Headline]: Apple most immune to memory price rises, others more impacted: Bernstein
+[Summary]: Investing.com -- Apple is the best-positioned major hardware maker to weather the sharp surge in memory prices, according to Bernstein, which says the company faces only a “0.3% impact to quarterly EPS” despite historic cost inflation across the industry.
+
+[Headline]: Apple, IBD Stock Of The Day, Sets Up Before Holiday Season
+[Summary]: Apple is the IBD Stock Of The Day as the consumer electronics giant prepares for a busy holiday shopping season.
+
+[Headline]: Heard on the Street Recap: Stocks Gain, Bitcoin Pain
+[Summary]: New York Fed President John Williams made the case for a near-term cut to interest rates.  Alphabet, the parent company of Google, overtook Microsoft as the third-largest company by market value, behind Nvidia and Apple.  Small stocks outperformed, with the Russell 2000 rising 2.8%.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL increased by 2.71% (271.24 -> 278.59)
+- Alpha vs Nasdaq-100: -2.23% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -2.2)
+- Volatility (ATR): 5.77 (Normal)
+- Weekly RSI (Trend Strength): 72.2 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 66.9 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +22.7% vs SMA200 (Bullish Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: 6.2% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple cuts jobs in latest round of tech layoffs
+[Summary]: Apple said on Monday it is cutting jobs across its sales teams, noting that only a small number of roles will be impacted by the layoffs.
+
+[Headline]: Update: Apple Probed by Poland Antitrust Authority Over Ad-Tracking Policy
+[Summary]: (Updates throughout with statement from UOKiK.) Apple (AAPL) faces an investigation by Poland's a
+
+[Headline]: Apple Challenges India's Antitrust Penalty Law With Potential $38 Billion Risk
+[Summary]: Company seeks to limit fines to local revenue amid ongoing app-market investigation.
+
+[Headline]: EU says Apple Ads and Maps likely qualify as gatekeepers
+[Summary]: STORY: The EU Commission said Friday Apple Ads and Apple Maps could likely be deemed “gatekeepers” under the bloc’s digital rules. The tech giant immediately disputed this.So-called gatekeepers have to adhere to a strict set of rules on moderation of content…To allow fair competition and make it easier for consumers to switch between services.The EU’s Digital Markets Act classifies gatekeepers as companies which have over 45 million monthly active users, $79 billion in market capitalization - and which provide a core platform service for business users.The EU Commission said notifications from Apple had shown the platforms met the thresholds set for this designation. The Commission has 45 working days to decide whether to designate Apple as a gatekeeper for any of these services.If designated, Apple will have six months to comply.Apple said in a response on Friday that it had submitted official rebuttals to the pre-designation notification.It said Apple Ads is not a large player in the online advertising services market in the EU, and has minimal share compared to rivals such as Google, Meta, Microsoft, TikTok or X.It also said Maps has very limited usage in the EU compared to other services like Google Maps and Waze.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL increased by 0.66% (278.59 -> 280.44)
+- Alpha vs Nasdaq-100: +0.07% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.2)
+- Volatility (ATR): 5.93 (Normal)
+- Weekly RSI (Trend Strength): 77.3 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 61.3 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +23.1% vs SMA200 (Bullish Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: 5.9% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple iPhone 17 Sales Are Booming. Its Stock Is Hitting Record Highs Too.
+[Summary]: Sales of the iPhone will hit a record high in 2025 thanks in large part to huge demand from Chinese consumers, according to a new research report.
+
+[Headline]: Apple (AAPL) Price Target Raised as Loop Capital Sees Stronger iPhone 17 Demand
+[Summary]: Apple Inc. (NASDAQ:AAPL) is one of the AI Stocks in Focus This Week. On December 2nd, Loop Capital analyst Gary Mobley raised the price target on the stock to $325.00 (from $315.00) while maintaining a “Buy” rating. The price target raise follows updated iPhone estimates that reflect unit and ASP adjustments based on supply chain research. […]
+
+[Headline]: Stock Market Today: Dow Rises On Surprise Jobless Claims; Snowflake Plunges On Earnings (Live Coverage)
+[Summary]: Stock Market Today: The Dow Jones index rose Thursday on surprise weekly jobless claims. AI stock Snowflake plunged on earnings.
+
+[Headline]: Apple’s executive shake-up continues with departures of general counsel and policy head
+[Summary]: Apple loses two more top senior executives with exits of longtime general counsel Kate Adams and environmental VP Lisa Jackson. Meta’s Jennifer Newstead is set to join as new general counsel in 2026.
+
+
+Some recent basic financials of AAPL, reported at 2025-09-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2186
+bookValue: 73733
+cashRatio: 0.21695214060169896
+currentRatio: 0.8933
+ebitPerShare: 2.1816
+eps: 1.8479
+ev: 3821483.5
+evEbitdaTTM: 26.4594
+evRevenueTTM: 9.1827
+fcfMargin: 0.2585
+fcfPerShareTTM: 6.6855
+grossMargin: 0.4718
+inventoryTurnoverTTM: 33.9834
+longtermDebtTotalAsset: 0.218
+longtermDebtTotalCapital: 0.4544
+longtermDebtTotalEquity: 1.0623
+netDebtToTotalCapital: 0.3638
+netDebtToTotalEquity: 0.8507
+netMargin: 0.268
+operatingMargin: 0.3165
+payoutRatioTTM: 0.1377
+pb: 50.978
+peTTM: 33.5574
+pfcfTTM: 38.0568
+pretaxMargin: 0.3201
+psTTM: 9.032
+quickRatio: 0.8588
+receivablesTurnoverTTM: 11.3725
+roaTTM: 0.328
+roeTTM: 1.6405
+roicTTM: 0.6703
+rotcTTM: 0.7962
+salesPerShare: 6.8937
+sgaToSale: 0.5282
+totalDebtToEquity: 1.338
+totalDebtToTotalAsset: 0.2746
+totalDebtToTotalCapital: 0.5723
+totalRatio: 1.2583
+
+Based on all the information before 2025-12-05, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2025-12-05 to 2025-12-12). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2025-12-12,DOWN,DOWN,-1.6566048584159685,278.28,273.67,True,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: DOWN by 1.5%
+Confidence: 70%
+
+[Positive Developments]:
+1. **Strong Uptrend**: AAPL has been in a strong uptrend, with daily RSI in the neutral range and a bullish MACD crossover. This indicates strong momentum.
+2. **Long-Term Bullish Regime**: The stock is trading well above its SMA200, indicating a long-term bullish trend.
+
+[Potential Concerns]:
+1. **Job Cuts and Leadership Changes**: Apple has announced job cuts and departures of key executives, including Alan Dye and top executives retiring, which may signal internal restructuring and could affect investor sentiment.
+2. **Antitrust Issues**: Apple faces potential antitrust penalties in India and EU gatekeeper status, which could lead to additional regulatory scrutiny and compliance costs.
+3. **Price Overbought**: The weekly RSI is overbought, suggesting a potential correction.
+4. **Cathie Wood’s Moves**: Cathie Wood’s reduction in positions of key tech stocks signals a shift in sentiment towards mega-cap techs.
+
+[Prediction & Analysis]
+Analysis: Despite the strong uptrend and long-term bullish regime, there are several factors pointing towards a potential pullback. The overbought condition indicated by the RSI suggests that the stock might experience some mean reversion. Additionally, the news regarding job cuts, executive departures, and regulatory challenges create headwinds that could weigh on the stock price. The bearish MACD crossover adds to the likelihood of a near-term pullback. Given these factors, I predict a slight downward movement in the stock price over the next week, with a confidence level of 70%.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2025-12-12"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL increased by 2.71% (271.24 -> 278.59)
+- Alpha vs Nasdaq-100: -2.23% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -2.2)
+- Volatility (ATR): 5.77 (Normal)
+- Weekly RSI (Trend Strength): 72.2 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 66.9 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +22.7% vs SMA200 (Bullish Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: 6.2% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple cuts jobs in latest round of tech layoffs
+[Summary]: Apple said on Monday it is cutting jobs across its sales teams, noting that only a small number of roles will be impacted by the layoffs.
+
+[Headline]: Apple Challenges India's Antitrust Penalty Law With Potential $38 Billion Risk
+[Summary]: Company seeks to limit fines to local revenue amid ongoing app-market investigation.
+
+[Headline]: BUZZ Investing: High-Valuation Tech Stocks Reset
+[Summary]: Market volatility rose as investors reassessed high-valuation tech and AI sectors. BUZZ Index reflected shifts in sentiment toward growth and innovation themes.
+
+[Headline]: EU says Apple Ads and Maps likely qualify as gatekeepers
+[Summary]: STORY: The EU Commission said Friday Apple Ads and Apple Maps could likely be deemed “gatekeepers” under the bloc’s digital rules. The tech giant immediately disputed this.So-called gatekeepers have to adhere to a strict set of rules on moderation of content…To allow fair competition and make it easier for consumers to switch between services.The EU’s Digital Markets Act classifies gatekeepers as companies which have over 45 million monthly active users, $79 billion in market capitalization - and which provide a core platform service for business users.The EU Commission said notifications from Apple had shown the platforms met the thresholds set for this designation. The Commission has 45 working days to decide whether to designate Apple as a gatekeeper for any of these services.If designated, Apple will have six months to comply.Apple said in a response on Friday that it had submitted official rebuttals to the pre-designation notification.It said Apple Ads is not a large player in the online advertising services market in the EU, and has minimal share compared to rivals such as Google, Meta, Microsoft, TikTok or X.It also said Maps has very limited usage in the EU compared to other services like Google Maps and Waze.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.03% (278.59 -> 278.52)
+- Alpha vs Nasdaq-100: -1.03% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: 0.2)
+- Volatility (ATR): 5.69 (Normal)
+- Weekly RSI (Trend Strength): 77.3 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 58.9 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +22.2% vs SMA200 (Bullish Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: 5.0% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple Design Executive Alan Dye Poached by Meta in Major Coup
+[Summary]: The company is hiring Alan Dye, who has served as the head of Apple’s user interface design team since 2015, according to people with knowledge of the matter.  Apple is replacing Dye with longtime designer Stephen Lemay, according to the people, who asked not to be identified because the personnel changes haven’t been announced.
+
+[Headline]: Top Apple Executives to Leave, Adding to Recent Departures
+[Summary]: Lisa Jackson, who led sustainability initiatives, will retire in January, and Kate Adams, the company’s general counsel, will retire late next year.
+
+[Headline]: India weighs greater phone-location surveillance; tech giants protest
+[Summary]: STORY: India is reviewing a proposal about greater phone-location surveillance.That's according to documents, emails and five sources.The pitch is from the telecom industry to force smartphone firms to enable satellite location tracking.Tech majors, including Apple, Google and Samsung have all opposed the move due to privacy concerns.Prime Minister Narendra Modi's government this week pulled back from forcing smartphone makers to preload a state-run cyber safety app on all devices.Activists and politicians had raised privacy worries about potential snooping.The Modi administration has been concerned for years its agencies don't get precise locations when legal requests are made to telecom firms during investigations.The current system only allows companies to use cellular tower data.That only provides an estimated area location, which can be off by several meters.An email showed a leading Indian telecoms trade body proposed precise user locations should only be provided if authorities order smartphone makers to activate A-GPS technology.It would require location services to always be activated in smartphones with no option for users to disable them.Sources said Apple, Samsung and Alphabet's Google have told New Delhi it shouldn't be mandated.India's IT and home ministries are both analyzing the telecom industry's proposal and didn't respond to Reuters questions.
+
+[Headline]: Cathie Wood’s latest move is alarming for big stocks
+[Summary]: Cathie Wood’s recent move just sent a quiet alarm through mega-cap tech. ARK filings filed for December 4 show major cuts to Meta Platforms (META) and Tesla (TSLA) stocks, two ""Magnificent 7"" stalwarts that played a key role in 2025’s relentless AI-powered rally. For perspective, Meta ...
+
+[Headline]: Why Tech's Comeback And A 'Hawkish' Fed Could Change Everything
+[Summary]: Market breadth improved as industrials, energy, financials, and consumer cyclicals posted gains, highlighting that the rally is no longer solely dependent on tech. Read more here.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.27% (278.52 -> 277.77)
+- Alpha vs Nasdaq-100: -0.29% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -1.0)
+- Volatility (ATR): 4.79 (Normal)
+- Weekly RSI (Trend Strength): 76.2 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 68.8 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +21.5% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 4.0% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Did Apple’s Executive Overhaul Around AI, Regulation and ESG Just Shift Its (AAPL) Investment Narrative?
+[Summary]: In recent days, Apple has outlined a sweeping leadership transition, including the upcoming retirement of long‑time general counsel Kate Adams, the planned arrival of former Meta chief legal officer Jennifer Newstead to oversee a merged Legal and Government Affairs group in 2026, and the future retirement of AI head John Giannandrea as he shifts into an advisory role. These moves, alongside Lisa Jackson’s planned departure after overseeing a more than 60% cut in Apple’s emissions since 2015...
+
+[Headline]: Soaring Memory Prices Will Cannibalize Apple's Profit
+[Summary]: Apple risks margin compression from rising DRAM/NAND prices due to AI demand. Learn how this could impact AAPL stock's premium valuation and future profits.
+
+[Headline]: Gold price climbs after interest rates cut by Federal Reserve
+[Summary]: The US Federal Reserve has lowered interest rates for the third time this year.
+
+[Headline]: UBS Reiterates Neutral on Apple (AAPL) as App Store Growth Slows
+[Summary]: Apple Inc. (NASDAQ:AAPL) is one of the Hot AI Stocks on Wall Street’s Radar. On December 9, UBS analyst David Vogt reiterated a Neutral rating on the stock with a $280.00 price target. Firm analysts hold a neutral stance on the stock due to slowing App Store growth momentum and tough December comps despite FX tailwind. […]
+
+
+Some recent basic financials of AAPL, reported at 2025-09-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2186
+bookValue: 73733
+cashRatio: 0.21695214060169896
+currentRatio: 0.8933
+ebitPerShare: 2.1816
+eps: 1.8479
+ev: 3821483.5
+evEbitdaTTM: 26.4594
+evRevenueTTM: 9.1827
+fcfMargin: 0.2585
+fcfPerShareTTM: 6.6855
+grossMargin: 0.4718
+inventoryTurnoverTTM: 33.9834
+longtermDebtTotalAsset: 0.218
+longtermDebtTotalCapital: 0.4544
+longtermDebtTotalEquity: 1.0623
+netDebtToTotalCapital: 0.3638
+netDebtToTotalEquity: 0.8507
+netMargin: 0.268
+operatingMargin: 0.3165
+payoutRatioTTM: 0.1377
+pb: 50.978
+peTTM: 33.5574
+pfcfTTM: 38.0568
+pretaxMargin: 0.3201
+psTTM: 9.032
+quickRatio: 0.8588
+receivablesTurnoverTTM: 11.3725
+roaTTM: 0.328
+roeTTM: 1.6405
+roicTTM: 0.6703
+rotcTTM: 0.7962
+salesPerShare: 6.8937
+sgaToSale: 0.5282
+totalDebtToEquity: 1.338
+totalDebtToTotalAsset: 0.2746
+totalDebtToTotalCapital: 0.5723
+totalRatio: 1.2583
+
+Based on all the information before 2025-12-12, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2025-12-12 to 2025-12-19). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2025-12-19,DOWN,DOWN,-0.09865896883108805,273.67,273.4,True,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: DOWN by 2.0%
+Confidence: 70%
+
+[Positive Developments]:
+1. **Strong Uptrend**: Despite recent declines, the daily trend remains strong with a long-term uptrend (+18.5% vs SMA200).
+2. **Outperformance Against Nasdaq-100**: AAPL outperformed the Nasdaq-100 index by 1.72% in the previous week.
+
+[Potential Concerns]:
+1. **Executive Exodus**: Key personnel departures, including the head of UI design and sustainability leaders, signal internal instability.
+2. **Legal Challenges**: The contempt finding against Apple in the app store case could lead to increased regulatory scrutiny and potential financial penalties.
+3. **Tech Sector Underperformance**: The broader tech sector is experiencing a selloff, affecting AAPL’s performance.
+4. **Chip Costs Impact**: Rising chip costs may negatively impact global smartphone shipments, affecting Apple’s hardware sales.
+
+[Prediction & Analysis]
+Analysis: Despite AAPL’s strong long-term uptrend, recent news and quant signals point towards potential downside pressure. The executive exodus and legal challenges add to the company’s operational and regulatory risks. Additionally, the broader tech sector’s selloff and rising chip costs pose significant headwinds. Although the daily trend remains positive, the weekly RSI is overbought, suggesting a potential pullback. The recent price decrease and underperformance against the Nasdaq-100 further support a cautious outlook. Given these factors, I predict AAPL to move DOWN by approximately 2.0% over the next week, with a confidence level of 70%.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2025-12-19"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.03% (278.59 -> 278.52)
+- Alpha vs Nasdaq-100: -1.03% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: 0.2)
+- Volatility (ATR): 5.69 (Normal)
+- Weekly RSI (Trend Strength): 77.3 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 58.9 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +22.2% vs SMA200 (Bullish Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: 5.0% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple Design Executive Alan Dye Poached by Meta in Major Coup
+[Summary]: The company is hiring Alan Dye, who has served as the head of Apple’s user interface design team since 2015, according to people with knowledge of the matter.  Apple is replacing Dye with longtime designer Stephen Lemay, according to the people, who asked not to be identified because the personnel changes haven’t been announced.
+
+[Headline]: Top Apple Executives to Leave, Adding to Recent Departures
+[Summary]: Lisa Jackson, who led sustainability initiatives, will retire in January, and Kate Adams, the company’s general counsel, will retire late next year.
+
+[Headline]: India weighs greater phone-location surveillance; tech giants protest
+[Summary]: STORY: India is reviewing a proposal about greater phone-location surveillance.That's according to documents, emails and five sources.The pitch is from the telecom industry to force smartphone firms to enable satellite location tracking.Tech majors, including Apple, Google and Samsung have all opposed the move due to privacy concerns.Prime Minister Narendra Modi's government this week pulled back from forcing smartphone makers to preload a state-run cyber safety app on all devices.Activists and politicians had raised privacy worries about potential snooping.The Modi administration has been concerned for years its agencies don't get precise locations when legal requests are made to telecom firms during investigations.The current system only allows companies to use cellular tower data.That only provides an estimated area location, which can be off by several meters.An email showed a leading Indian telecoms trade body proposed precise user locations should only be provided if authorities order smartphone makers to activate A-GPS technology.It would require location services to always be activated in smartphones with no option for users to disable them.Sources said Apple, Samsung and Alphabet's Google have told New Delhi it shouldn't be mandated.India's IT and home ministries are both analyzing the telecom industry's proposal and didn't respond to Reuters questions.
+
+[Headline]: Cathie Wood’s latest move is alarming for big stocks
+[Summary]: Cathie Wood’s recent move just sent a quiet alarm through mega-cap tech. ARK filings filed for December 4 show major cuts to Meta Platforms (META) and Tesla (TSLA) stocks, two ""Magnificent 7"" stalwarts that played a key role in 2025’s relentless AI-powered rally. For perspective, Meta ...
+
+[Headline]: Why Tech's Comeback And A 'Hawkish' Fed Could Change Everything
+[Summary]: Market breadth improved as industrials, energy, financials, and consumer cyclicals posted gains, highlighting that the rally is no longer solely dependent on tech. Read more here.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.18% (278.52 -> 278.02)
+- Alpha vs Nasdaq-100: +1.72% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.3)
+- Volatility (ATR): 4.42 (Normal)
+- Weekly RSI (Trend Strength): 76.2 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 62.9 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +21.5% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 3.9% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Executive Exodus Hits Apple As Fears Grow Over Possible Chip Chief Departure
+[Summary]: Apple is witnessing a major reshuffle in its top management, with several key personnel and engineers exiting the company.
+
+[Headline]: UBS Reiterates Neutral on Apple (AAPL) as App Store Growth Slows
+[Summary]: Apple Inc. (NASDAQ:AAPL) is one of the Hot AI Stocks on Wall Street’s Radar. On December 9, UBS analyst David Vogt reiterated a Neutral rating on the stock with a $280.00 price target. Firm analysts hold a neutral stance on the stock due to slowing App Store growth momentum and tough December comps despite FX tailwind. […]
+
+[Headline]: Appeals court backs contempt finding against Apple, but reopens a door for iPhone app fees
+[Summary]: A federal appeals court on Thursday backed a ruling that held Apple in civil contempt for brazenly defying an order designed to open its iPhone app store to other payment systems besides its own, but the decision also reopened a door for the company to collect commission from the rival options.  The unanimous decision by a three-judge panel for the Ninth Circuit Court of Appeals mostly validated a scalding contempt order issued in April by U.S. District Judge Yvonne Gonzalez Rogers for violating a key part of her September 2021 findings in a legal battle instigated by video game maker Epic Games.
+
+[Headline]: Big Tech ETF falls, on pace for weekly slump
+[Summary]: Big Tech ETF falls, on pace for weekly slump
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 2.19% (278.02 -> 271.94)
+- Alpha vs Nasdaq-100: -1.45% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: 0.8)
+- Volatility (ATR): 4.78 (Normal)
+- Weekly RSI (Trend Strength): 73.5 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 37.5 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +18.5% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 1.1% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Appeals court backs contempt finding against Apple, but reopens a door for iPhone app fees
+[Summary]: A federal appeals court on Thursday backed a ruling that held Apple in civil contempt for brazenly defying an order designed to open its iPhone app store to other payment systems besides its own, but the decision also reopened a door for the company to collect commission from the rival options.  The unanimous decision by a three-judge panel for the Ninth Circuit Court of Appeals mostly validated a scalding contempt order issued in April by U.S. District Judge Yvonne Gonzalez Rogers for violating a key part of her September 2021 findings in a legal battle instigated by video game maker Epic Games.
+
+[Headline]: Rising chip costs to push global smartphone shipments down in 2026, Counterpoint says
+[Summary]: Global smartphone shipments are expected to decline 2.1% next year as rising chip costs ​are likely to impact demand, technology-focused market research firm ‌Counterpoint said on Tuesday.  Electronics supply chains around the world have been hit ‌by a shortage of legacy memory chips in recent months as manufacturers turned their focus to high-end memory chips suited for semiconductors designed for AI applications.  What we are seeing now ⁠is the low end ‌of the market (below $200) being impacted most severely, with bill-of-materials costs (total cost of parts) increasing by ‍20% to 30% since the beginning of the year, Counterpoint's Research Director MS Hwang said.
+
+[Headline]: Nasdaq Composite Logs Worst Day in Nearly 4 Weeks Amid Tech Selloff
+[Summary]: The Nasdaq Composite on Wednesday posted its worst day in nearly four weeks, with technology stocks
+
+[Headline]: Apple announces changes to iOS in Japan
+[Summary]: CUPERTINO, Calif., December 18, 2025--Apple® today announced changes impacting iOS apps in Japan to comply with the Mobile Software Competition Act (MSCA). These updates create new options for developers to distribute apps on alternative app marketplaces and to process app payments for digital goods and services outside of Apple In-App Purchase. Across these changes, Apple has worked to reduce new privacy and security risks the law creates to provide users in Japan the best and safest experience
+
+[Headline]: ECB leaves key interest rate unchanged at 2.15%
+[Summary]: The ECB is set to hold a press conference later on where it is expected to indicate little appetite for further cuts in the near-term.
+
+
+Some recent basic financials of AAPL, reported at 2025-09-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2186
+bookValue: 73733
+cashRatio: 0.21695214060169896
+currentRatio: 0.8933
+ebitPerShare: 2.1816
+eps: 1.8479
+ev: 3821483.5
+evEbitdaTTM: 26.4594
+evRevenueTTM: 9.1827
+fcfMargin: 0.2585
+fcfPerShareTTM: 6.6855
+grossMargin: 0.4718
+inventoryTurnoverTTM: 33.9834
+longtermDebtTotalAsset: 0.218
+longtermDebtTotalCapital: 0.4544
+longtermDebtTotalEquity: 1.0623
+netDebtToTotalCapital: 0.3638
+netDebtToTotalEquity: 0.8507
+netMargin: 0.268
+operatingMargin: 0.3165
+payoutRatioTTM: 0.1377
+pb: 50.978
+peTTM: 33.5574
+pfcfTTM: 38.0568
+pretaxMargin: 0.3201
+psTTM: 9.032
+quickRatio: 0.8588
+receivablesTurnoverTTM: 11.3725
+roaTTM: 0.328
+roeTTM: 1.6405
+roicTTM: 0.6703
+rotcTTM: 0.7962
+salesPerShare: 6.8937
+sgaToSale: 0.5282
+totalDebtToEquity: 1.338
+totalDebtToTotalAsset: 0.2746
+totalDebtToTotalCapital: 0.5723
+totalRatio: 1.2583
+
+Based on all the information before 2025-12-19, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2025-12-19 to 2025-12-26). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2025-12-26,DOWN,DOWN,-0.8741770299926798,273.4,271.01,True,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: DOWN by 1.5%
+Confidence: 70%
+
+[Positive Developments]:
+1. **App Store Changes**: Apple is loosening its grip on the app store in Japan, which may open up new revenue streams and improve relationships with developers.
+2. **Lead Times Improving**: JPMorgan reports that lead times for the iPhone 17 series are moderating, indicating improved supply chain efficiency.
+
+[Potential Concerns]:
+1. **Executive Exodus**: Several key personnel and engineers are exiting Apple, raising concerns about internal stability and strategic direction.
+2. **Slowing App Store Growth**: UBS analyst notes slowing App Store growth, which is a significant revenue source for Apple.
+3. **Legal Issues**: Apple was fined €98 million in Italy for app tracking policies, indicating ongoing regulatory pressures.
+4. **Volume Surge**: Huge volume spikes indicate increased selling pressure, likely driven by negative sentiment.
+
+[Prediction & Analysis]
+Analysis: Despite strong fundamentals and a bullish long-term trend, recent developments point towards near-term headwinds. Key concerns include executive departures, regulatory fines, and slowing App Store growth. The high-volume trade indicates increased selling pressure, suggesting that investors are taking profits or reacting to negative news. The daily RSI is in oversold territory (33.5), but given the overall negative sentiment, a further pullback seems likely. The MACD bearish crossover and recent underperformance versus the Nasdaq-100 also support a short-term downward bias. Therefore, I predict AAPL to move DOWN by approximately 1.5% over the next week, with a confidence level of 70%.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2025-12-26"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.18% (278.52 -> 278.02)
+- Alpha vs Nasdaq-100: +1.72% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.3)
+- Volatility (ATR): 4.42 (Normal)
+- Weekly RSI (Trend Strength): 76.2 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 62.9 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +21.5% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 3.9% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Executive Exodus Hits Apple As Fears Grow Over Possible Chip Chief Departure
+[Summary]: Apple is witnessing a major reshuffle in its top management, with several key personnel and engineers exiting the company.
+
+[Headline]: Oracle Earnings Will Be A Tell On Debt-Fueled AI Trade; Global Yields At 16-Year High Ahead Of Fed Cut
+[Summary]: Global Yields Hit 16 Year High
+
+[Headline]: UBS Reiterates Neutral on Apple (AAPL) as App Store Growth Slows
+[Summary]: Apple Inc. (NASDAQ:AAPL) is one of the Hot AI Stocks on Wall Street’s Radar. On December 9, UBS analyst David Vogt reiterated a Neutral rating on the stock with a $280.00 price target. Firm analysts hold a neutral stance on the stock due to slowing App Store growth momentum and tough December comps despite FX tailwind. […]
+
+[Headline]: Appeals court backs contempt finding against Apple, but reopens a door for iPhone app fees
+[Summary]: A federal appeals court on Thursday backed a ruling that held Apple in civil contempt for brazenly defying an order designed to open its iPhone app store to other payment systems besides its own, but the decision also reopened a door for the company to collect commission from the rival options.  The unanimous decision by a three-judge panel for the Ninth Circuit Court of Appeals mostly validated a scalding contempt order issued in April by U.S. District Judge Yvonne Gonzalez Rogers for violating a key part of her September 2021 findings in a legal battle instigated by video game maker Epic Games.
+
+[Headline]: Big Tech ETF falls, on pace for weekly slump
+[Summary]: Big Tech ETF falls, on pace for weekly slump
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 1.66% (278.02 -> 273.41)
+- Alpha vs Nasdaq-100: -2.22% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: HUGE (Z-Score: 3.9)
+- Volatility (ATR): 4.60 (Normal)
+- Weekly RSI (Trend Strength): 73.5 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 30.3 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +19.0% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 1.5% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Memory chip prices could pressure smartphone shipments in 2026: RPT
+[Summary]: Counterpoint Research expects smartphone shipments to fall by 2.1% in 2026 over rising memory chip costs as more companies invest billions into AI infrastructure buildouts. Counterpoint Research senior research analyst Yang Wang and Bloomberg Intelligence analyst Mandeep Singh come on Morning Brief to expand on these global tech trends. To watch more expert insights and analysis on the latest market action, check out more Morning Brief.
+
+[Headline]: Apple Loosens iOS Grip in Japan
+[Summary]: New rules open app stores and payments
+
+[Headline]: Apple Plans More Ads in App Store
+[Summary]: Search results get busier next year
+
+[Headline]: Apple becomes a debt collector with its new developer agreement
+[Summary]: Apple says it can now collect any money a developer owes the tech giant at any time.
+
+[Headline]: Apple faces risk from memory cost spike in 2026: MoffettNathanson's Moffett
+[Summary]: CNBC's ""Closing Bell Overtime"" team discusses whether 2026 will be a critical year for Apple, the company's 2025 performance and more with Craig Moffett of MoffettNathanson.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL increased by 0.05% (273.41 -> 273.55)
+- Alpha vs Nasdaq-100: -1.06% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -1.0)
+- Volatility (ATR): 4.12 (Normal)
+- Weekly RSI (Trend Strength): 74.4 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 33.5 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +18.8% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 1.0% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: China's vice commerce minister met Apple COO on Friday
+[Summary]: BEIJING, Dec 22 (Reuters) - China's Vice Commerce ​Minister Li ‌Chenggang and Apple's (AAPL) Chief ‌Operating Officer Sabih Khan discussed the U.S. firm's business ⁠operations in ‌China in a meeting on ‍Friday, a commerce ministry statement said on Monday.
+
+[Headline]: Apple Fined $115 Million in Italy Over App Tracking Policy
+[Summary]: Italy’s competition watchdog fined  Apple  more than 98 million euros ($114.8 million), saying the company abused its dominance in the digital economy through its app-tracking transparency policy.  The AGCM said Monday that Apple imposes unfair privacy rules on app developers by requiring them to gain users’ consent to collect and use data for advertising through a specific prompt.  The watchdog said the prompt essentially forces app developers to ask for consent twice for the same purpose.
+
+[Headline]: Lead times across the iPhone  17 series are moderating: analyst
+[Summary]: Investing.com -- Lead times for Apple’s iPhone 17 series are easing, according to JPMorgan, as supply catches up with demand.
+
+[Headline]: Dow, S&P 500 Close at New Highs in Holiday-Shortened Session
+[Summary]: The Dow Jones Industrial Average and the S&P 500 ended the holiday-shortened Wednesday session at ne
+
+[Headline]: Nike shares jump after Apple CEO Cook doubles stake to $6 million
+[Summary]: STORY: EDITORS PLEASE NOTE: A PREVIOUS VERSION OF THIS REPORT PUT THE WORTH OF TIM COOK'S SHARES IN NIKE AT $6 BILLION, WHEN THEY ARE VALUED AT $6 MILLION. THIS VERSION HAS BEEN AMENDED TO REFLECT THE CORRECT FIGURE.Nike shares climbed about 5.5% in Wednesday morning trading after Apple CEO Tim Cook doubled his personal stake in the sportswear giant.That's according to a regulatory filing.Cook sits on Nike's board and now owns about $6 million worth of stock.The purchase appears to be a vote of confidence in the turnaround efforts of Nike CEO Elliot Hill.It comes days after the company reported weaker quarterly margins and weak sales in China.That's despite Hill's attempt to lift demand with fresh marketing plans and innovation focused on running and sports while phasing out lagging lifestyle brands.The CEO has also tried to mend ties with wholesalers like Dick's Sporting Goods... to try and put the brand in front of shoppers as competition heats up with rivals.However, Hill's plan is putting strain on Nike's margins, now in decline for over a year, and its efforts to get back on top in China are faltering.Nike's shares have slumped nearly 13% since it reported results on December 18 and are on track for the fourth straight year of declines.
+
+
+Some recent basic financials of AAPL, reported at 2025-09-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2186
+bookValue: 73733
+cashRatio: 0.21695214060169896
+currentRatio: 0.8933
+ebitPerShare: 2.1816
+eps: 1.8479
+ev: 3821483.5
+evEbitdaTTM: 26.4594
+evRevenueTTM: 9.1827
+fcfMargin: 0.2585
+fcfPerShareTTM: 6.6855
+grossMargin: 0.4718
+inventoryTurnoverTTM: 33.9834
+longtermDebtTotalAsset: 0.218
+longtermDebtTotalCapital: 0.4544
+longtermDebtTotalEquity: 1.0623
+netDebtToTotalCapital: 0.3638
+netDebtToTotalEquity: 0.8507
+netMargin: 0.268
+operatingMargin: 0.3165
+payoutRatioTTM: 0.1377
+pb: 50.978
+peTTM: 33.5574
+pfcfTTM: 38.0568
+pretaxMargin: 0.3201
+psTTM: 9.032
+quickRatio: 0.8588
+receivablesTurnoverTTM: 11.3725
+roaTTM: 0.328
+roeTTM: 1.6405
+roicTTM: 0.6703
+rotcTTM: 0.7962
+salesPerShare: 6.8937
+sgaToSale: 0.5282
+totalDebtToEquity: 1.338
+totalDebtToTotalAsset: 0.2746
+totalDebtToTotalCapital: 0.5723
+totalRatio: 1.2583
+
+Based on all the information before 2025-12-26, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2025-12-26 to 2026-01-02). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2026-01-02,DOWN,DOWN,-4.295044463303932,271.01,259.37,True,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: DOWN by 2.0%
+Confidence: 65%
+
+[Positive Developments]:
+1. **China Imports**: China’s imports of foreign-branded mobile phones, including Apple’s iPhone, increased by 128% in November compared to the previous year, suggesting a potential boost in demand.
+2. **Legal Wins**: Apple secured a legal win, which could alleviate some regulatory pressures and potentially improve sentiment.
+
+[Potential Concerns]:
+1. **Supply Chain Pressures**: Increased memory costs and supply shortages are expected to impact smartphone shipments in 2026, which could affect Apple's profitability and production capabilities.
+2. **Regulatory Challenges**: Fines and regulatory actions, such as those in Italy and Brazil, highlight ongoing challenges and costs associated with compliance and regulatory scrutiny.
+
+[Prediction & Analysis]
+Analysis: Despite positive developments like increased Chinese imports and legal wins, the overall picture is mixed. The news highlights several concerns, particularly around supply chain issues and regulatory challenges. These factors could weigh on investor sentiment and lead to a short-term correction. 
+
+From a technical standpoint, while the long-term trend remains bullish, the recent bearish MACD crossover and the stock's slight underperformance indicate a potential pullback. Additionally, the high volume trading on one day suggests a possible reversal. Given these factors, I predict a slight downward move in the next week, with moderate confidence due to the mixed signals and ongoing regulatory uncertainties.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2026-01-02"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 1.66% (278.02 -> 273.41)
+- Alpha vs Nasdaq-100: -2.22% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: HUGE (Z-Score: 3.9)
+- Volatility (ATR): 4.60 (Normal)
+- Weekly RSI (Trend Strength): 73.5 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 30.3 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +19.0% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 1.5% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Smartphone Shipments Seen Falling in 2026 on Higher Memory Costs
+[Summary]: Supply shortages expected to pressure Apple and other manufacturers
+
+[Headline]: Apple Loosens iOS Grip in Japan
+[Summary]: New rules open app stores and payments
+
+[Headline]: Apple Plans More Ads in App Store
+[Summary]: Search results get busier next year
+
+[Headline]: Apple becomes a debt collector with its new developer agreement
+[Summary]: Apple says it can now collect any money a developer owes the tech giant at any time.
+
+[Headline]: Apple faces risk from memory cost spike in 2026: MoffettNathanson's Moffett
+[Summary]: CNBC's ""Closing Bell Overtime"" team discusses whether 2026 will be a critical year for Apple, the company's 2025 performance and more with Craig Moffett of MoffettNathanson.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.10% (273.41 -> 273.14)
+- Alpha vs Nasdaq-100: -1.21% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.8)
+- Volatility (ATR): 4.08 (Normal)
+- Weekly RSI (Trend Strength): 74.4 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 36.1 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +18.4% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 0.7% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Mag 7 Stocks Keep Bouncing Back
+[Summary]: Big Tech stocks rallied back again on Friday. The Roundhill Magnificent Seven ETF was up 0.7% after surging nearly 2% yesterday. The group of megacap tech stocks rebounded sharply from a 2.2% drop on Wednesday.
+
+[Headline]: Lead times across the iPhone  17 series are moderating: analyst
+[Summary]: Investing.com -- Lead times for Apple’s iPhone 17 series are easing, according to JPMorgan, as supply catches up with demand.
+
+[Headline]: Apple Agrees to Open iOS App Stores in Brazil After Antitrust Case
+[Summary]: Deal with regulators could reshape how apps and payments work on iPhones in the country
+
+[Headline]: Italian Competition Authority fines Apple EUR 98M over app tracking
+[Summary]: The Italian Competition Authority has issued a EUR 98M fine to Apple (AAPL) over ‘abuse of a dominant position’. The agency said, “The Authority found the App Tracking Transparency policy to restrict competition. The policy lays down the privacy rules imposed by the company on third-party developers of apps offered on the App Store. The Italian Competition Authority has imposed a 98,635,416.67 euro fine on Apple, Apple Distribution International and Apple Italia for abuse of a dominant position.
+
+[Headline]: Apple Stock Ticks Up After a Surprise From China—and a Legal Win
+[Summary]: China’s imports of foreign-branded mobile phones, including Apple’s iPhone, rose 128% in November from a year earlier.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.56% (273.14 -> 271.61)
+- Alpha vs Nasdaq-100: +0.97% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.5)
+- Volatility (ATR): 3.78 (Normal)
+- Weekly RSI (Trend Strength): 69.9 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 31.3 (Neutral)
+- Trend: Bullish
+- Long-Term Trend: +17.3% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -0.3% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple Stock Ticks Up After a Surprise From China—and a Legal Win
+[Summary]: China’s imports of foreign-branded mobile phones, including Apple’s iPhone, rose 128% in November from a year earlier.
+
+[Headline]: Apple's iPhone Market Share Rises in China, Still Below Prior Peaks
+[Summary]: Barclays flags stronger iPhone 17 demand but continued competition from local brands.
+
+[Headline]: Apple Faces High Stakes in 2026 as AI-Powered Siri Launch Slips
+[Summary]: Company bets on next-gen voice assistant to reignite iPhone upgrade cycle.
+
+[Headline]: Stocks Decline Pre-Bell Ahead of Final Trading Session of 2025
+[Summary]: The main US stock measures were trending lower in Wednesday's premarket activity as investors prepar
+
+
+Some recent basic financials of AAPL, reported at 2025-12-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2435
+bookValue: 88190
+cashRatio: 0.27910228063584347
+currentRatio: 0.9737
+ebitPerShare: 3.4335
+eps: 2.8424
+ev: 4090366.2
+evEbitdaTTM: 26.7379
+evRevenueTTM: 9.3898
+fcfMargin: 0.3586
+fcfPerShareTTM: 8.3878
+grossMargin: 0.4816
+inventoryTurnoverTTM: 35.8924
+longtermDebtTotalAsset: 0.2022
+longtermDebtTotalCapital: 0.4291
+longtermDebtTotalEquity: 0.8695
+netDebtToTotalCapital: 0.2529
+netDebtToTotalEquity: 0.5124
+netMargin: 0.2928
+operatingMargin: 0.3537
+payoutRatioTTM: 0.1315
+pb: 45.8689
+peTTM: 34.346
+pfcfTTM: 32.8012
+pretaxMargin: 0.3548
+psTTM: 9.2861
+quickRatio: 0.9376
+receivablesTurnoverTTM: 12.5249
+roaTTM: 0.3362
+roeTTM: 1.5994
+roicTTM: 0.6892
+rotcTTM: 0.8255
+salesPerShare: 9.7065
+sgaToSale: 0.5184
+totalDebtToEquity: 1.0263
+totalDebtToTotalAsset: 0.2386
+totalDebtToTotalCapital: 0.5065
+totalRatio: 1.3029
+
+Based on all the information before 2026-01-02, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2026-01-02 to 2026-01-09). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2026-01-09,DOWN,DOWN,-1.4805104676716672,259.37,255.53,True,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: DOWN by 2%
+Confidence: 70%
+
+[Positive Developments]:
+1. **Lead Times Easing**: JPMorgan reports that lead times for iPhone 17 are easing, indicating supply catching up with demand.
+2. **China Imports Increase**: Chinese imports of foreign-branded mobile phones, including Apple’s iPhone, increased significantly in November, suggesting a potential boost in sales.
+
+[Potential Concerns]:
+1. **Legal Issues**: Apple faces a EUR 98M fine from the Italian Competition Authority over app tracking policies, which could affect its business operations and reputation.
+2. **Vision Pro Strategy Reset**: Weak demand for Vision Pro forces a strategy reset, indicating potential issues with new product lines.
+3. **Market Underperformance**: Apple underperformed the Nasdaq-100 index, suggesting broader market headwinds.
+4. **Neutral Rating Initiation**: Raymond James resumed coverage with a neutral rating, signaling a cautious outlook.
+
+[Prediction & Analysis]
+Analysis: Despite some positive developments like easing lead times and increased Chinese imports, the overall sentiment appears cautious due to legal challenges, strategic resets, and market underperformance. The technical indicators show a bearish crossover on the MACD and oversold conditions on the RSI, supporting a short-term downward bias. The recent price decline and underperformance relative to the Nasdaq-100 further reinforce this view. Given these factors, I predict a slight downtrend in the next week, with a moderate confidence level. The long-term bullish trend and strong fundamentals provide some support, but the immediate concerns and technical signals suggest a short-term pullback.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2026-01-09"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.10% (273.41 -> 273.14)
+- Alpha vs Nasdaq-100: -1.21% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.8)
+- Volatility (ATR): 4.08 (Normal)
+- Weekly RSI (Trend Strength): 74.4 (Overbought)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 36.1 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +18.4% vs SMA200 (Bullish Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: 0.7% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Lead times across the iPhone  17 series are moderating: analyst
+[Summary]: Investing.com -- Lead times for Apple’s iPhone 17 series are easing, according to JPMorgan, as supply catches up with demand.
+
+[Headline]: Apple Agrees to Open iOS App Stores in Brazil After Antitrust Case
+[Summary]: Deal with regulators could reshape how apps and payments work on iPhones in the country
+
+[Headline]: Dow, S&P 500 Close at New Highs in Holiday-Shortened Session
+[Summary]: The Dow Jones Industrial Average and the S&P 500 ended the holiday-shortened Wednesday session at ne
+
+[Headline]: Italian Competition Authority fines Apple EUR 98M over app tracking
+[Summary]: The Italian Competition Authority has issued a EUR 98M fine to Apple (AAPL) over ‘abuse of a dominant position’. The agency said, “The Authority found the App Tracking Transparency policy to restrict competition. The policy lays down the privacy rules imposed by the company on third-party developers of apps offered on the App Store. The Italian Competition Authority has imposed a 98,635,416.67 euro fine on Apple, Apple Distribution International and Apple Italia for abuse of a dominant position.
+
+[Headline]: Apple Stock Ticks Up After a Surprise From China—and a Legal Win
+[Summary]: China’s imports of foreign-branded mobile phones, including Apple’s iPhone, rose 128% in November from a year earlier.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.87% (273.14 -> 270.76)
+- Alpha vs Nasdaq-100: +0.85% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.1)
+- Volatility (ATR): 4.00 (Normal)
+- Weekly RSI (Trend Strength): 69.9 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 31.1 (Neutral)
+- Trend: Bullish
+- Long-Term Trend: +16.8% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -0.7% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: The S&P 500 Is Too Exposed To Big Tech, Time To Buy JPMorgan’s Mid Cap Equity ETF Instead
+[Summary]: The S&P 500 (NYSE:SPY) has a concentration problem. Its top 10 holdings command 39% of the portfolio, with mega-cap tech names like NVIDIA (NASDAQ:NVDA), Apple (NASDAQ:AAPL), and Microsoft (NASDAQ:MSFT) alone accounting for over 20%. Information Technology represents 34% of the fund, and when combined with Communication Services, Big Tech exposure pushes past 44%. For investors ... The S&P 500 Is Too Exposed To Big Tech, Time To Buy JPMorgan’s Mid Cap Equity ETF Instead
+
+[Headline]: Apple Faces High Stakes in 2026 as AI-Powered Siri Launch Slips
+[Summary]: Company bets on next-gen voice assistant to reignite iPhone upgrade cycle.
+
+[Headline]: Apple Quietly Pulls Back on Vision Pro
+[Summary]: Weak demand forces strategy reset
+
+[Headline]: OpenAI Is Taking On Apple’s App Store. It’s Got a Long Way to Go.
+[Summary]: Sam Altman  wants OpenAI to have an app store to rival Apple’s. Early tests suggest he’s got a long way to go.  If ChatGPT’s more than 800 million users want to buy groceries from Instacart, create a playlist with Spotify or find a hike on AllTrails, now they can do so inside the chatbot instead of opening an iPhone app.  In theory that threatens Apple’s impregnable walled garden.
+
+[Headline]: Apple Stock Initiated At Neutral. Here's Why.
+[Summary]: Investment bank Raymond James on Friday resumed coverage of Apple stock with a market perform, or neutral, rating.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 4.42% (270.76 -> 258.80)
+- Alpha vs Nasdaq-100: -5.62% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: 0.3)
+- Volatility (ATR): 4.09 (Normal)
+- Weekly RSI (Trend Strength): 62.5 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 22.0 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +11.2% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -5.0% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple Quietly Pulls Back on Vision Pro
+[Summary]: Weak demand forces strategy reset
+
+[Headline]: Apple Stock Initiated At Neutral. Here's Why.
+[Summary]: Investment bank Raymond James on Friday resumed coverage of Apple stock with a market perform, or neutral, rating.
+
+[Headline]: Samsung’s Plan to Wreck Apple
+[Summary]: Apple lacks an AI-integrated product. Samsung aims to take smartphone market share from Apple by releasing 800 million AI-powered mobile devices this year.
+
+[Headline]: Alphabet’s Market Cap Rallies Past Apple for First Time in Nearly Seven Years
+[Summary]: Alphabet shares rose 2.4% Wednesday, putting the Google parent ahead of Apple as the second largest U.S. company by market capitalization.  Alphabet's gains gave the company a market value of $3.89 trillion, compared with Apple's $3.85 trillion, according to Dow Jones Market Data.  The last time Alphabet was the second largest company by market cap was 2018.
+
+[Headline]: India defends antitrust penalty law in Apple fight
+[Summary]: By Aditya Kalra and Arpan Chaturvedi NEW DELHI, Jan 8 (Reuters) - A law used to calculate fines on the basis of a company's global turnover will discourage breaches by multinationals, India's ​antitrust watchdog told a court in opposing Apple's high-profile challenge to the measure. In November, ‌Apple asked New Delhi judges to strike down the 2024 law, which could also have implications for global giants such as ‌Pernod Ricard, Publicis, Amazon and other foreign companies facing antitrust scrut
+
+
+Some recent basic financials of AAPL, reported at 2025-12-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2435
+bookValue: 88190
+cashRatio: 0.27910228063584347
+currentRatio: 0.9737
+ebitPerShare: 3.4335
+eps: 2.8424
+ev: 4090366.2
+evEbitdaTTM: 26.7379
+evRevenueTTM: 9.3898
+fcfMargin: 0.3586
+fcfPerShareTTM: 8.3878
+grossMargin: 0.4816
+inventoryTurnoverTTM: 35.8924
+longtermDebtTotalAsset: 0.2022
+longtermDebtTotalCapital: 0.4291
+longtermDebtTotalEquity: 0.8695
+netDebtToTotalCapital: 0.2529
+netDebtToTotalEquity: 0.5124
+netMargin: 0.2928
+operatingMargin: 0.3537
+payoutRatioTTM: 0.1315
+pb: 45.8689
+peTTM: 34.346
+pfcfTTM: 32.8012
+pretaxMargin: 0.3548
+psTTM: 9.2861
+quickRatio: 0.9376
+receivablesTurnoverTTM: 12.5249
+roaTTM: 0.3362
+roeTTM: 1.5994
+roicTTM: 0.6892
+rotcTTM: 0.8255
+salesPerShare: 9.7065
+sgaToSale: 0.5184
+totalDebtToEquity: 1.0263
+totalDebtToTotalAsset: 0.2386
+totalDebtToTotalCapital: 0.5065
+totalRatio: 1.3029
+
+Based on all the information before 2026-01-09, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2026-01-09 to 2026-01-16). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2026-01-16,DOWN,DOWN,-2.931162681485543,255.53,248.04,True,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: DOWN by 2.5%
+Confidence: 75%
+
+[Positive Developments]:
+1. **Alpha Performance**: AAPL outperformed the Nasdaq-100 in some weeks, indicating resilience in a challenging market environment.
+2. **Cash Flow and Profit Margins**: Strong financial metrics such as high operating margin (35.37%) and net margin (29.28%) indicate robust profitability and cash generation.
+
+[Potential Concerns]:
+1. **AI Strategy Lagging**: Reports suggest that Apple's AI initiatives are lagging behind competitors like Alphabet, which could impact future growth prospects.
+2. **Market Competition**: Samsung plans to launch AI-powered smartphones, potentially eroding Apple’s market share.
+3. **Supply Chain Issues**: AI-related supply snags and soaring memory prices are pressuring margins and outlooks.
+4. **Regulatory Headwinds**: Apple faces final warnings from Indian regulators in antitrust disputes, adding to regulatory risks.
+
+[Prediction & Analysis]
+Analysis: Despite strong financials and some outperformance, several negative news items point towards underlying issues that could affect future performance. The bearish crossover in MACD and oversold conditions in RSI suggest that the market may be pricing in these concerns. The overall trend remains bullish, but the short-term indicators and recent news highlight significant headwinds. Given the combination of supply chain issues, competitive pressures, and regulatory challenges, a short-term correction seems likely. Thus, the prediction is a modest decline over the next week, with a confidence level of 75%, reflecting the mixed signals but leaning towards the negative developments currently impacting the stock.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2026-01-16"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.87% (273.14 -> 270.76)
+- Alpha vs Nasdaq-100: +0.85% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.1)
+- Volatility (ATR): 4.00 (Normal)
+- Weekly RSI (Trend Strength): 69.9 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 31.1 (Neutral)
+- Trend: Bullish
+- Long-Term Trend: +16.8% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -0.7% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: US Equities Fall in Muted Trading as Nvidia, Tesla Decline
+[Summary]: US equity benchmarks fell Monday in muted trading with most of the Magnificent Seven tech stocks und
+
+[Headline]: Apple Faces High Stakes in 2026 as AI-Powered Siri Launch Slips
+[Summary]: Company bets on next-gen voice assistant to reignite iPhone upgrade cycle.
+
+[Headline]: Apple Quietly Pulls Back on Vision Pro
+[Summary]: Weak demand forces strategy reset
+
+[Headline]: OpenAI Is Taking On Apple’s App Store. It’s Got a Long Way to Go.
+[Summary]: Sam Altman  wants OpenAI to have an app store to rival Apple’s. Early tests suggest he’s got a long way to go.  If ChatGPT’s more than 800 million users want to buy groceries from Instacart, create a playlist with Spotify or find a hike on AllTrails, now they can do so inside the chatbot instead of opening an iPhone app.  In theory that threatens Apple’s impregnable walled garden.
+
+[Headline]: Apple Stock Initiated At Neutral. Here's Why.
+[Summary]: Investment bank Raymond James on Friday resumed coverage of Apple stock with a market perform, or neutral, rating.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 4.30% (270.76 -> 259.13)
+- Alpha vs Nasdaq-100: -6.50% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.1)
+- Volatility (ATR): 3.90 (Normal)
+- Weekly RSI (Trend Strength): 62.5 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 21.9 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +11.3% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -4.9% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Samsung’s Plan to Wreck Apple
+[Summary]: Apple lacks an AI-integrated product. Samsung aims to take smartphone market share from Apple by releasing 800 million AI-powered mobile devices this year.
+
+[Headline]: AI ‘Fatigue’ Leaves Investors Focused on S&P’s Other 493 Stocks
+[Summary]: A growing number of investors are now wagering that run, led by the Magnificent Seven, is about to end.  Mounting concerns about AI’s ability to deliver seismic changes on the American economy — and the fat profits that would come with them — has turned investor euphoria about the technology into agita.  “I call it ‘AI fatigue,’” said Ed Yardeni, president and chief investment strategist at the eponymous Yardeni Research.
+
+[Headline]: Alphabet’s Market Cap Rallies Past Apple for First Time in Nearly Seven Years
+[Summary]: Alphabet shares rose 2.4% Wednesday, putting the Google parent ahead of Apple as the second largest U.S. company by market capitalization.  Alphabet's gains gave the company a market value of $3.89 trillion, compared with Apple's $3.85 trillion, according to Dow Jones Market Data.  The last time Alphabet was the second largest company by market cap was 2018.
+
+[Headline]: Apple stock slides in 2026 as AI strategy lags behind competitors
+[Summary]: Apple (AAPL) has slid by 5% year-to-date in 2026 as its AI products seemingly struggle to compete with Alphabet's new Google Gemini 3 (GOOG, GOOGL). Yahoo Finance Senior Reporter Brooke DiPalma and Innovator Capital Management chief investment strategist Tim Urbanowicz weigh in on recent executive departures and other headlines may be weighing on the iPhone maker's stock. To watch more expert insights and analysis on the latest market action, check out more Opening Bid.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 0.45% (259.13 -> 257.97)
+- Alpha vs Nasdaq-100: +0.33% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.2)
+- Volatility (ATR): 4.10 (Normal)
+- Weekly RSI (Trend Strength): 50.9 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 11.7 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +10.4% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -5.0% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Omdia: Mainland China’s Smartphone Market Declined 1% in 2025 as Huawei Reclaimed the Top Spot After Five Years
+[Summary]: LONDON, January 15, 2026--According to Omdia’s latest research, mainland China’s smartphone market declined 1% year on year in 2025, and full-year shipments reached 282.3 million units. With a shipment of 46.8 million units, Huawei returned to the top spot, accounting for a 17% market share. vivo closely followed in second place with 46.0 million units shipped and a 16% market share. Benefiting from its strong performance in the fourth quarter, Apple maintained its position in the top three with
+
+[Headline]: Apple, Qualcomm Hit AI Supply Snag
+[Summary]: Japan glass cloth emerges as bottleneck
+
+[Headline]: Soaring Memory Prices Lift Chipmakers, Pressure Apple and HP
+[Summary]: AI-driven memory shortages are boosting suppliers while rising costs weigh on hardware makers' margins and outlooks.
+
+[Headline]: Apple Faces Final Warning From India in Antitrust Dispute
+[Summary]: Regulator threatens to move ahead after yearlong delay in Apple's response.
+
+[Headline]: Trump Administration Offers Tariff Relief In Exchange For $250 Billion Taiwan Chip Investment — TSMC Weighs Arizona Expansion, Says Howard Lutnick
+[Summary]: The Trump administration struck a U.S.–Taiwan trade deal offering tariff relief in exchange for $250 billion in chip investments in America, as TSMC weighs expanding its Arizona footprint while Washington warns of steep penalties for companies that fail to build in the U.S.
+
+
+Some recent basic financials of AAPL, reported at 2025-12-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2435
+bookValue: 88190
+cashRatio: 0.27910228063584347
+currentRatio: 0.9737
+ebitPerShare: 3.4335
+eps: 2.8424
+ev: 4090366.2
+evEbitdaTTM: 26.7379
+evRevenueTTM: 9.3898
+fcfMargin: 0.3586
+fcfPerShareTTM: 8.3878
+grossMargin: 0.4816
+inventoryTurnoverTTM: 35.8924
+longtermDebtTotalAsset: 0.2022
+longtermDebtTotalCapital: 0.4291
+longtermDebtTotalEquity: 0.8695
+netDebtToTotalCapital: 0.2529
+netDebtToTotalEquity: 0.5124
+netMargin: 0.2928
+operatingMargin: 0.3537
+payoutRatioTTM: 0.1315
+pb: 45.8689
+peTTM: 34.346
+pfcfTTM: 32.8012
+pretaxMargin: 0.3548
+psTTM: 9.2861
+quickRatio: 0.9376
+receivablesTurnoverTTM: 12.5249
+roaTTM: 0.3362
+roeTTM: 1.5994
+roicTTM: 0.6892
+rotcTTM: 0.8255
+salesPerShare: 9.7065
+sgaToSale: 0.5184
+totalDebtToEquity: 1.0263
+totalDebtToTotalAsset: 0.2386
+totalDebtToTotalCapital: 0.5065
+totalRatio: 1.3029
+
+Based on all the information before 2026-01-16, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2026-01-16 to 2026-01-23). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2026-01-23,DOWN,UP,4.612159329140472,248.04,259.48,False,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: DOWN by 2.5%
+Confidence: 70%
+
+[Positive Developments]:
+1. **Bullish Long-Term Trend**: The long-term trend shows a positive deviation (+5.8%) from the 200-day Simple Moving Average (SMA200), indicating a bullish structural bias.
+2. **High Sales Per Share**: Strong sales per share at $9.7065, reflecting robust revenue generation.
+
+[Potential Concerns]:
+1. **Bearish MACD Crossover**: The recent bearish crossover of the MACD suggests a weakening momentum, aligning with the underperformance vs. Nasdaq-100.
+2. **AI Strategy Lagging**: News highlights Apple’s AI strategy lagging behind competitors like Alphabet, impacting investor sentiment and contributing to the stock’s underperformance.
+3. **Increasing Memory Costs**: Rising memory chip costs are pressuring hardware makers' margins, affecting Apple’s profitability.
+4. **Antitrust Issues**: Ongoing antitrust disputes in India and reliance on Google for AI development signal regulatory and strategic challenges.
+
+[Prediction & Analysis]
+Analysis: Despite a bullish long-term trend, recent technical indicators and news paint a more cautious picture. The bearish MACD crossover and underperformance relative to the Nasdaq-100 suggest a weakening momentum. Additionally, the news highlights significant headwinds, including competitive pressures in AI and increasing operational costs due to memory shortages. These factors collectively point towards a near-term downward pressure on the stock. Given the mixed signals but stronger negative indicators, a cautious prediction of a modest decline is justified. The high confidence level reflects the alignment between technical indicators and negative news developments.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2026-01-23"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 4.30% (270.76 -> 259.13)
+- Alpha vs Nasdaq-100: -6.50% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.1)
+- Volatility (ATR): 3.90 (Normal)
+- Weekly RSI (Trend Strength): 62.5 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 21.9 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +11.3% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -4.9% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Samsung’s Plan to Wreck Apple
+[Summary]: Apple lacks an AI-integrated product. Samsung aims to take smartphone market share from Apple by releasing 800 million AI-powered mobile devices this year.
+
+[Headline]: AI ‘Fatigue’ Leaves Investors Focused on S&P’s Other 493 Stocks
+[Summary]: A growing number of investors are now wagering that run, led by the Magnificent Seven, is about to end.  Mounting concerns about AI’s ability to deliver seismic changes on the American economy — and the fat profits that would come with them — has turned investor euphoria about the technology into agita.  “I call it ‘AI fatigue,’” said Ed Yardeni, president and chief investment strategist at the eponymous Yardeni Research.
+
+[Headline]: Alphabet’s Market Cap Rallies Past Apple for First Time in Nearly Seven Years
+[Summary]: Alphabet shares rose 2.4% Wednesday, putting the Google parent ahead of Apple as the second largest U.S. company by market capitalization.  Alphabet's gains gave the company a market value of $3.89 trillion, compared with Apple's $3.85 trillion, according to Dow Jones Market Data.  The last time Alphabet was the second largest company by market cap was 2018.
+
+[Headline]: Apple stock slides in 2026 as AI strategy lags behind competitors
+[Summary]: Apple (AAPL) has slid by 5% year-to-date in 2026 as its AI products seemingly struggle to compete with Alphabet's new Google Gemini 3 (GOOG, GOOGL). Yahoo Finance Senior Reporter Brooke DiPalma and Innovator Capital Management chief investment strategist Tim Urbanowicz weigh in on recent executive departures and other headlines may be weighing on the iPhone maker's stock. To watch more expert insights and analysis on the latest market action, check out more Opening Bid.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 1.48% (259.13 -> 255.29)
+- Alpha vs Nasdaq-100: -0.62% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: High (Z-Score: 1.0)
+- Volatility (ATR): 4.20 (Normal)
+- Weekly RSI (Trend Strength): 50.9 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 10.5 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +9.2% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -5.9% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Mag 7 Fatigue? MAGS ETF Dips As Tesla, Meta And Nvidia Stumble In Early 2026
+[Summary]: MAGS fell 1.5% as Mag7 stocks including Tesla, Meta and Nvidia slipped, raising questions over whether mega-cap tech is pausing or losing leadership.
+
+[Headline]: Soaring Memory Prices Lift Chipmakers, Pressure Apple and HP
+[Summary]: AI-driven memory shortages are boosting suppliers while rising costs weigh on hardware makers' margins and outlooks.
+
+[Headline]: Apple Faces Final Warning From India in Antitrust Dispute
+[Summary]: Regulator threatens to move ahead after yearlong delay in Apple's response.
+
+[Headline]: Cathie Wood's ARK Invest Says Apple's Reliance On Google For AI Signals Deeper Trouble
+[Summary]: Apple Inc.'s (NASDAQ:AAPL) decision to outsource its artificial intelligence (AI) foundation to Alphabet Inc.‘s (NASDAQ:GOOG) (NASDAQ:GOOGL) Google is not a strategic masterstroke but a sign of a company in “huge, hairy trouble,” according to the research team at Cathie Wood's ARK Invest. ‘Strategic Disaster’ During the latest episode of ARK’s “The Brainstorm,” Chief Futurist Brett Winton offered a scathing critique of the newly announced partnership that will see Google's Gemini models power Si
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 2.81% (255.29 -> 248.12)
+- Alpha vs Nasdaq-100: -2.73% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.1)
+- Volatility (ATR): 5.35 (Normal)
+- Weekly RSI (Trend Strength): 58.2 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 11.9 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +5.8% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -8.1% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Cathie Wood's ARK Invest Says Apple's Reliance On Google For AI Signals Deeper Trouble
+[Summary]: Apple Inc.'s (NASDAQ:AAPL) decision to outsource its artificial intelligence (AI) foundation to Alphabet Inc.‘s (NASDAQ:GOOG) (NASDAQ:GOOGL) Google is not a strategic masterstroke but a sign of a company in “huge, hairy trouble,” according to the research team at Cathie Wood's ARK Invest. ‘Strategic Disaster’ During the latest episode of ARK’s “The Brainstorm,” Chief Futurist Brett Winton offered a scathing critique of the newly announced partnership that will see Google's Gemini models power Si
+
+[Headline]: Treasury Yield Spike Can’t Be Ignored. Stocks Are Vulnerable to ‘Sell America’ Pressures.
+[Summary]: The current turmoil in global bond markets, which has triggered a spike in U.S. Treasury yields and a record slump in Japan, could have big implications for stock markets heading into a crucial early stretch of the new year.  President Donald Trump’s vow to take over Greenland “one way or the other,” as well as his new tariff threats on European allies and the ongoing pressure on Federal Reserve independence, has stoked a new phase of the so-called Sell America trade in bond markets that spilled over violently into stocks on the first day of the holiday-shortened week.  The bond market slump Tuesday, which was accelerated by a looming fiscal crisis in Japan as the country heads toward a snap national election next month, lifted benchmark  10-year Treasury note  yields just past 4.3%, the highest since August 2025.
+
+[Headline]: Surging memory chip prices dim outlook for consumer electronics makers
+[Summary]: Global demand for smartphones, personal computers and gaming consoles is expected to shrink this year as companies from Britain's Raspberry Pi to HP Inc raise sticker prices to offset surging memory chip costs.  The rapid build-out of artificial intelligence infrastructure by U.S. tech firms such ​as OpenAI, Alphabet-owned  Google and Microsoft has absorbed much of the world's memory chip supply, pushing up prices as manufacturers prioritize components for higher-margin data ‌centers over consumer devices.  Samsung, SK Hynix and Micron, the world's three largest producers of memory chips, have said in recent months that they were struggling to keep up with demand as they reported rosy quarterly ‌earnings on the back of surging prices for their semiconductors.
+
+[Headline]: Apple asks Indian court to stop antitrust body from seeking its financials
+[Summary]: NEW DELHI, Jan 22 (Reuters) - Apple has asked an Indian court to stop the country's antitrust watchdog from seeking its global financial records as part of an investigation into its app store policies
+
+[Headline]: Apple iPhone Upside Could Be Overshadowed by Rising Memory Costs, UBS Says
+[Summary]: Apple's (AAPL) strong demand for the iPhone 17 series, along with a slight pull-in of shipments in t
+
+
+Some recent basic financials of AAPL, reported at 2025-12-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2435
+bookValue: 88190
+cashRatio: 0.27910228063584347
+currentRatio: 0.9737
+ebitPerShare: 3.4335
+eps: 2.8424
+ev: 4090366.2
+evEbitdaTTM: 26.7379
+evRevenueTTM: 9.3898
+fcfMargin: 0.3586
+fcfPerShareTTM: 8.3878
+grossMargin: 0.4816
+inventoryTurnoverTTM: 35.8924
+longtermDebtTotalAsset: 0.2022
+longtermDebtTotalCapital: 0.4291
+longtermDebtTotalEquity: 0.8695
+netDebtToTotalCapital: 0.2529
+netDebtToTotalEquity: 0.5124
+netMargin: 0.2928
+operatingMargin: 0.3537
+payoutRatioTTM: 0.1315
+pb: 45.8689
+peTTM: 34.346
+pfcfTTM: 32.8012
+pretaxMargin: 0.3548
+psTTM: 9.2861
+quickRatio: 0.9376
+receivablesTurnoverTTM: 12.5249
+roaTTM: 0.3362
+roeTTM: 1.5994
+roicTTM: 0.6892
+rotcTTM: 0.8255
+salesPerShare: 9.7065
+sgaToSale: 0.5184
+totalDebtToEquity: 1.0263
+totalDebtToTotalAsset: 0.2386
+totalDebtToTotalCapital: 0.5065
+totalRatio: 1.3029
+
+Based on all the information before 2026-01-23, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2026-01-23 to 2026-01-30). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2026-01-30,UP,UP,7.183597965161086,259.48,278.12,True,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: UP by 2.5%
+Confidence: 65%
+
+[Positive Developments]:
+1. **Acquisition of Q.ai**: Apple's acquisition of Israeli AI startup Q.ai indicates ongoing investment in AI technology, potentially enhancing product offerings and competitive edge.
+2. **Q1 Earnings Report**: Strong Q1 results with revenue up 16% YoY and EPS up 19% YoY, signaling robust financial health and growth.
+
+[Potential Concerns]:
+1. **Memory Price Pressures**: Rising memory chip costs could negatively impact margins and profitability.
+2. **Antitrust Issues**: Ongoing disputes with regulatory bodies in India and Europe may lead to operational and financial challenges.
+
+[Prediction & Analysis]
+Analysis: Despite facing challenges from rising memory costs and regulatory issues, Apple's recent positive earnings report and strategic acquisitions indicate continued growth and innovation. The stock has shown resilience, outperforming the Nasdaq-100 in the latest week, suggesting investor confidence. The daily RSI remains neutral to oversold, indicating potential for a bounce back. However, the mixed stack with a recent bearish MACD crossover and high volatility suggest caution. Given the strong fundamentals and recent outperformance, I predict a slight upward movement in the coming week, though with moderate confidence due to ongoing pressures and technical signals.
+
+### Prediction Summary
+- **Positive Factors**: Strong earnings, strategic acquisitions.
+- **Negative Factors**: Regulatory challenges, rising costs.
+- **Technical Indicators**: Neutral to oversold RSI, mixed trend signals.
+- **Market Context**: Outperforming Nasdaq-100, high volume suggests active trading.
+
+Given these factors, the prediction is cautiously optimistic, leaning towards an upward movement with moderate confidence.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2026-01-30"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 1.48% (259.13 -> 255.29)
+- Alpha vs Nasdaq-100: -0.62% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: High (Z-Score: 1.0)
+- Volatility (ATR): 4.20 (Normal)
+- Weekly RSI (Trend Strength): 50.9 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 10.5 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +9.2% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -5.9% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Soaring Memory Prices Lift Chipmakers, Pressure Apple and HP
+[Summary]: AI-driven memory shortages are boosting suppliers while rising costs weigh on hardware makers' margins and outlooks.
+
+[Headline]: Apple Faces Final Warning From India in Antitrust Dispute
+[Summary]: Regulator threatens to move ahead after yearlong delay in Apple's response.
+
+[Headline]: Cathie Wood's ARK Invest Says Apple's Reliance On Google For AI Signals Deeper Trouble
+[Summary]: Apple Inc.'s (NASDAQ:AAPL) decision to outsource its artificial intelligence (AI) foundation to Alphabet Inc.‘s (NASDAQ:GOOG) (NASDAQ:GOOGL) Google is not a strategic masterstroke but a sign of a company in “huge, hairy trouble,” according to the research team at Cathie Wood's ARK Invest. ‘Strategic Disaster’ During the latest episode of ARK’s “The Brainstorm,” Chief Futurist Brett Winton offered a scathing critique of the newly announced partnership that will see Google's Gemini models power Si
+
+[Headline]: Stock Market Today: S&P 500, Dow Slide As Netflix, GE Aerospace Earnings Loom (Live Coverage)
+[Summary]: The Dow Jones Industrial Average and other major stock indexes fell Friday as Wall Street looked ahead to a three-day weekend. Among movers, obesity drug stock Novo Nordisk and PNC Financial Services each jumped on the stock market today.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 2.93% (255.29 -> 247.81)
+- Alpha vs Nasdaq-100: -3.17% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.0)
+- Volatility (ATR): 5.06 (Normal)
+- Weekly RSI (Trend Strength): 58.2 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 12.1 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +5.5% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -8.1% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: America’s Biggest Tech Stocks Lead Tuesday’s Sell-Off as Trump's Greenland Rhetoric Rattles Markets
+[Summary]: Big tech stocks led markets lower Tuesday amid a broad market sell-off after Trump over the weekend threatened new tariffs on a number of European countries unless the U.S. is allowed to acquire Greenland.
+
+[Headline]: Apple asks Indian court to stop antitrust body from seeking its financials
+[Summary]: NEW DELHI, Jan 22 (Reuters) - Apple has asked an Indian court to stop the country's antitrust watchdog from seeking its global financial records as part of an investigation into its app store policies
+
+[Headline]: Intel Faces Memory-Price Crunch. Why Apple Will Be the Next Victim.
+[Summary]: Intel stock was falling as it faces headwinds from soaring memory-chip prices, which could hit other companies such as Apple.
+
+[Headline]: Update: Market Chatter: Apple Accuses European Commission of Preventing it From Implementing Changes
+[Summary]: (Updates with the European Commission's response in the fifth paragraph.) Apple (AAPL) is accusin
+
+[Headline]: Nvidia Dethrones Apple As Taiwan Semiconductor's Largest Customer
+[Summary]: Nvidia Corp's (NASDAQ:NVDA) surge in artificial intelligence demand is reshaping the global semiconductor supply chain. Nvidia has overtaken Apple Inc. (NASDAQ:AAPL) as Taiwan Semiconductor Manufacturing Co. Ltd's (NYSE:TSM) largest customer. Nvidia chief Jensen Huang confirmed the change publicly for the first time during a recent podcast. Nvidia now ranks as Taiwan Semiconductor's biggest client—an outcome he suggested would please Taiwan Semiconductor founder Morris Chang. Don't Miss: Missed
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL increased by 4.13% (247.81 -> 258.04)
+- Alpha vs Nasdaq-100: +3.05% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: High (Z-Score: 1.5)
+- Volatility (ATR): 5.44 (Normal)
+- Weekly RSI (Trend Strength): 46.6 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 48.8 (Neutral)
+- Trend: Bullish
+- Long-Term Trend: +9.3% vs SMA200 (Mixed Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: -3.8% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Samsung, SK Hynix warn of squeezed chip supplies for PCs, phones due to AI boom
+[Summary]: Two of the world's top chipmakers warned on Thursday that computer and smartphone companies were set to bear the brunt of a worsening shortage of DRAM chips used in ​their products, as the makers prioritise demand for more lucrative chips required to build AI infrastructure.  The warnings by Samsung Electronics ‌and SK Hynix, which control two thirds of the DRAM chip market and count the likes of Apple as customers, underscore growing margin pressure on consumer electronics makers ‌and potential supply chain disruptions.  ""PC and mobile customers are having difficulties securing memory supplies, as they are being directly and indirectly affected by supply constraints and strong demand for server-related products,"" Park Joon Deok, head of DRAM marketing at SK Hynix, told analysts on a post-earnings call.
+
+[Headline]: Apple acquires Israeli AI startup Q.ai in first sizeable deal in years
+[Summary]: Investing.com -- Apple Inc. has acquired Israel-based artificial intelligence startup Q.ai, which specializes in technology that reads facial movements and understands silent communication.
+
+[Headline]: Apple reports first quarter results
+[Summary]: CUPERTINO, Calif., January 29, 2026--Apple® today announced financial results for its fiscal 2026 first quarter ended December 27, 2025. The Company posted quarterly revenue of $143.8 billion, up 16 percent year over year. Diluted earnings per share was $2.84, up 19 percent year over year.
+
+
+Some recent basic financials of AAPL, reported at 2025-12-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2435
+bookValue: 88190
+cashRatio: 0.27910228063584347
+currentRatio: 0.9737
+ebitPerShare: 3.4335
+eps: 2.8424
+ev: 4090366.2
+evEbitdaTTM: 26.7379
+evRevenueTTM: 9.3898
+fcfMargin: 0.3586
+fcfPerShareTTM: 8.3878
+grossMargin: 0.4816
+inventoryTurnoverTTM: 35.8924
+longtermDebtTotalAsset: 0.2022
+longtermDebtTotalCapital: 0.4291
+longtermDebtTotalEquity: 0.8695
+netDebtToTotalCapital: 0.2529
+netDebtToTotalEquity: 0.5124
+netMargin: 0.2928
+operatingMargin: 0.3537
+payoutRatioTTM: 0.1315
+pb: 45.8689
+peTTM: 34.346
+pfcfTTM: 32.8012
+pretaxMargin: 0.3548
+psTTM: 9.2861
+quickRatio: 0.9376
+receivablesTurnoverTTM: 12.5249
+roaTTM: 0.3362
+roeTTM: 1.5994
+roicTTM: 0.6892
+rotcTTM: 0.8255
+salesPerShare: 9.7065
+sgaToSale: 0.5184
+totalDebtToEquity: 1.0263
+totalDebtToTotalAsset: 0.2386
+totalDebtToTotalCapital: 0.5065
+totalRatio: 1.3029
+
+Based on all the information before 2026-01-30, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2026-01-30 to 2026-02-06). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"
+2026-02-06,UP,DOWN,-8.032503955127284,278.12,255.78,False,True,rickson21/qwen_smalltest_20260313,"[Prediction]
+Prediction: UP by 3.5%
+Confidence: 75%
+
+[Positive Developments]:
+1. **Surging Revenue Growth**: Apple reported strong revenue growth of 16% YoY for the first quarter of 2026, driven by robust iPhone sales and a significant rebound in the China market.
+2. **Positive Analyst Sentiment**: Maxim Group upgraded Apple to a Buy rating with a $300 price target, indicating renewed investor interest and confidence in the stock.
+3. **Tax Break in India**: Apple secured a key tax break in India, clearing the path for further expansion and potentially driving future revenue growth.
+
+[Potential Concerns]:
+1. **AI Challenges**: Ongoing AI challenges and increasing competition from other tech giants may affect Apple's market position.
+2. **Memory Chip Shortage**: The shortage of DRAM chips could impact supply chains and potentially affect future margins.
+3. **Regulatory Headwinds**: EU rulings regarding Apple Ads and Maps limit certain market power but could still introduce compliance costs and regulatory risks.
+
+[Prediction & Analysis]
+Analysis: Despite some concerns around AI challenges and memory chip shortages, the recent positive developments such as strong revenue growth, analyst upgrades, and favorable regulatory decisions in India provide a bullish outlook for Apple. The structural quant signals show a consistent upward price move (+6.33%) and outperformance against the Nasdaq-100 index. Technical indicators also point towards a strong uptrend with a bullish MACD crossover and an RSI above neutral levels. Although the daily RSI suggests some neutral conditions, the overall trend remains bullish. Given these factors, the prediction for a continued upward trajectory seems justified, albeit with moderate confidence due to the potential regulatory and supply chain risks.","{""input"": {""ticker"": ""AAPL"", ""date"": ""2026-02-06"", ""n_weeks"": 3, ""use_basics"": true, ""temperature"": 0.7}}","<|im_start|>system
+You are acting as a professional equity analyst.
+
+You will be given:
+- Company profile and basic financials
+- Weekly historical news headlines and short descriptions
+- Weekly price data
+- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+
+Your task:
+1. Identify key positive developments from the news/financials.
+2. Identify key negative developments.
+3. Analyze price trend and momentum using the provided quant/technical signals.
+4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
+5. Provide confidence level (0–100%).
+
+Constraints:
+- Use ONLY the information given.
+- Do NOT reference any future knowledge beyond the cutoff date.
+- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
+- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
+
+Your answer format must be as follows:
+
+[Answer Start]
+### ANSWER START
+
+[Prediction]
+Prediction: [UP/DOWN] by [Percentage]%
+Confidence: [Percentage]%
+
+[Positive Developments]:
+1. ...
+
+[Potential Concerns]:
+1. ...
+
+[Prediction & Analysis]
+Analysis: ...
+<|im_start|>user
+[Company Introduction]:
+
+Apple Inc is a leading entity in the Technology sector. As of today, Apple Inc has a market capitalization of 3672046.58 in USD.
+
+Apple Inc operates primarily in the US, trading under the ticker AAPL on the NASDAQ NMS - GLOBAL MARKET.
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL decreased by 2.93% (255.29 -> 247.81)
+- Alpha vs Nasdaq-100: -3.17% (Underperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.0)
+- Volatility (ATR): 5.06 (Normal)
+- Weekly RSI (Trend Strength): 58.2 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 12.1 (Oversold)
+- Trend: Bullish
+- Long-Term Trend: +5.5% vs SMA200 (Mixed Stack)
+- MACD: Bearish Crossover
+- Mean Reversion: -8.1% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: This Magnificent 7 Stock Will Plunge This Year
+[Summary]: Apple is likely to underperform the other Magnificent 7 stocks this year. Investors have been walking away, and ongoing AI challenges will accelerate that process.
+
+[Headline]: America’s Biggest Tech Stocks Lead Tuesday’s Sell-Off as Trump's Greenland Rhetoric Rattles Markets
+[Summary]: Big tech stocks led markets lower Tuesday amid a broad market sell-off after Trump over the weekend threatened new tariffs on a number of European countries unless the U.S. is allowed to acquire Greenland.
+
+[Headline]: Intel Faces Memory-Price Crunch. Why Apple Will Be the Next Victim.
+[Summary]: Intel stock was falling as it faces headwinds from soaring memory-chip prices, which could hit other companies such as Apple.
+
+[Headline]: Update: Market Chatter: Apple Accuses European Commission of Preventing it From Implementing Changes
+[Summary]: (Updates with the European Commission's response in the fifth paragraph.) Apple (AAPL) is accusin
+
+[Headline]: Nvidia Dethrones Apple As Taiwan Semiconductor's Largest Customer
+[Summary]: Nvidia Corp's (NASDAQ:NVDA) surge in artificial intelligence demand is reshaping the global semiconductor supply chain. Nvidia has overtaken Apple Inc. (NASDAQ:AAPL) as Taiwan Semiconductor Manufacturing Co. Ltd's (NYSE:TSM) largest customer. Nvidia chief Jensen Huang confirmed the change publicly for the first time during a recent podcast. Nvidia now ranks as Taiwan Semiconductor's biggest client—an outcome he suggested would please Taiwan Semiconductor founder Morris Chang. Don't Miss: Missed
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL increased by 4.61% (247.81 -> 259.24)
+- Alpha vs Nasdaq-100: +4.75% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: HUGE (Z-Score: 2.7)
+- Volatility (ATR): 5.85 (Normal)
+- Weekly RSI (Trend Strength): 46.6 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 50.2 (Neutral)
+- Trend: Bullish
+- Long-Term Trend: +9.6% vs SMA200 (Mixed Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: -3.3% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Samsung, SK Hynix warn of squeezed chip supplies for PCs, phones due to AI boom
+[Summary]: Two of the world's top chipmakers warned on Thursday that computer and smartphone companies were set to bear the brunt of a worsening shortage of DRAM chips used in ​their products, as the makers prioritise demand for more lucrative chips required to build AI infrastructure.  The warnings by Samsung Electronics ‌and SK Hynix, which control two thirds of the DRAM chip market and count the likes of Apple as customers, underscore growing margin pressure on consumer electronics makers ‌and potential supply chain disruptions.  ""PC and mobile customers are having difficulties securing memory supplies, as they are being directly and indirectly affected by supply constraints and strong demand for server-related products,"" Park Joon Deok, head of DRAM marketing at SK Hynix, told analysts on a post-earnings call.
+
+[Headline]: Apple reports first quarter results
+[Summary]: CUPERTINO, Calif., January 29, 2026--Apple® today announced financial results for its fiscal 2026 first quarter ended December 27, 2025. The Company posted quarterly revenue of $143.8 billion, up 16 percent year over year. Diluted earnings per share was $2.84, up 19 percent year over year.
+
+[Headline]: Apple sees surging March revenue with strong iPhone demand in Asia
+[Summary]: STORY: Apple forecast a surge in revenue for the start of the year, thanks to strong demand for its iPhones and its China business bouncing back.On Thursday, it estimated an up to 16% leap for January to March, well ahead of Wall Street's expectations.That came after a strong holiday quarter that also beat estimates.CEO Tim Cook told Reuters that hunger for the latest iPhone 17 lineup was ""staggering.""The devices have been well-received for their upgraded camera features and better performance.Apple also says it benefited from a wave of users replacing older phones.The company says the holiday quarter to December 27th saw the iPhone set sales records in every region it operates in, pulling in $85 billion dollars, some $7 billion more than analysts had predicted......despite wider uncertainty in the economy.Sales in Greater China in particular jumped 38% year-on-year.Apple has faced pressure there from local rivals and regulatory scrutiny, but Cook said that the iPhone hit a sales record there.He said the iPhone 17 drove double-digit growth in the number of Chinese users switching from Android devices.However, Apple's results in the first quarter suggest the surging cost of DRAM memory and commodities like gold aren't showing up in the results yet.In a call with analysts, Cook said the global memory chip shortage would be ""a bit more of an impact"" on fiscal second-quarter margins.
+
+[Headline]: Maxim Group Upgrades Apple to Buy, Announces $300 Price Target
+[Summary]: Maxim Group  analyst Tom Forte   upgrades Apple (NASDAQ:AAPL) from Hold to Buy and announces $300 price target.
+
+
+[QUANT SIGNALS - STRUCTURAL]:
+- Price Move: AAPL increased by 6.33% (259.24 -> 275.65)
+- Alpha vs Nasdaq-100: +10.33% (Outperformed)
+- Market Context (VIX): N/A
+- Volume Status: Normal (Z-Score: -0.2)
+- Volatility (ATR): 6.87 (Normal)
+- Weekly RSI (Trend Strength): 47.4 (Neutral)
+
+[TECHNICALS - DAILY]:
+- Daily RSI: 68.7 (Neutral)
+- Trend: Strong Uptrend
+- Long-Term Trend: +15.8% vs SMA200 (Bullish Stack)
+- MACD: Bullish Crossover
+- Mean Reversion: 2.7% from SMA50 (Normal)
+
+[NEWS]:
+
+[Headline]: Apple Wins Key Tax Break in India, Clearing Path for Expansion
+[Summary]: Rule change allows foreign firms to fund factory equipment without tax exposure.
+
+[Headline]: Apple App store revenue up 6.3% in fiscal Q2-to-date, says BofA
+[Summary]: According to data on developer revenue from SensorTower, Apple’s (AAPL) App store revenue increased to $3.4B, or 6.3% year-over-year, after 35 days in fiscal Q2, reported BofA analyst Wamsi Mohan. For January, App store revenue increased 7.0% year-over-year globally, outpacing app store download growth of 3.6%, adds the analyst, who keeps an Buy rating and $325 price target on Apple shares.Claim 50% Off TipRanks PremiumUnlock hedge fund-level data and powerful investing tools for smarter, sharpe
+
+[Headline]: Apple stock rises as it bucks tech selloff amid AI disruption fears
+[Summary]: Investing.com -- Apple Inc. (NASDAQ:AAPL) stock rose on Wednesday, outperforming the broader tech sector by the widest margin in a year as investors increasingly view the iPhone maker as a safe haven amid concerns about artificial intelligence disruption.
+
+[Headline]: EU Rules Apple Ads and Maps Not Gatekeepers Under Digital Markets Act
+[Summary]: Commission cites limited market power for the two Apple services in Europe.
+
+[Headline]: Apple’s Gemini Deal And EU Ruling Reframe Long Term AI Story
+[Summary]: Apple (NasdaqGS:AAPL) has agreed to integrate Alphabet's Gemini AI models into Siri and other devices, signaling a shift in its AI approach. The partnership is aimed at upgrading Apple's virtual assistant and broader AI features across its ecosystem. The European Commission has decided that Apple Ads and Apple Maps are not subject to strict oversight under the EU Digital Markets Act. This EU decision limits additional regulatory obligations and related compliance costs for these Apple...
+
+
+Some recent basic financials of AAPL, reported at 2025-12-27, are presented below:
+
+[Basic Financials]:
+
+assetTurnoverTTM: 1.2435
+bookValue: 88190
+cashRatio: 0.27910228063584347
+currentRatio: 0.9737
+ebitPerShare: 3.4335
+eps: 2.8424
+ev: 4090366.2
+evEbitdaTTM: 26.7379
+evRevenueTTM: 9.3898
+fcfMargin: 0.3586
+fcfPerShareTTM: 8.3878
+grossMargin: 0.4816
+inventoryTurnoverTTM: 35.8924
+longtermDebtTotalAsset: 0.2022
+longtermDebtTotalCapital: 0.4291
+longtermDebtTotalEquity: 0.8695
+netDebtToTotalCapital: 0.2529
+netDebtToTotalEquity: 0.5124
+netMargin: 0.2928
+operatingMargin: 0.3537
+payoutRatioTTM: 0.1315
+pb: 45.8689
+peTTM: 34.346
+pfcfTTM: 32.8012
+pretaxMargin: 0.3548
+psTTM: 9.2861
+quickRatio: 0.9376
+receivablesTurnoverTTM: 12.5249
+roaTTM: 0.3362
+roeTTM: 1.5994
+roicTTM: 0.6892
+rotcTTM: 0.8255
+salesPerShare: 9.7065
+sgaToSale: 0.5184
+totalDebtToEquity: 1.0263
+totalDebtToTotalAsset: 0.2386
+totalDebtToTotalCapital: 0.5065
+totalRatio: 1.3029
+
+Based on all the information before 2026-02-06, let's first analyze the positive developments and potential concerns for AAPL. Come up with 2-4 most important factors respectively and keep them concise. Integrate both quantitative signals and news to explain the movement. Then make your prediction for next week (2026-02-06 to 2026-02-13). Provide a summary analysis to support your prediction. Before writing the analysis, cross-reference the [QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals (e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence logically rather than ignoring the data.<|im_end|>assistant
+"

@@ -1,0 +1,62 @@
+[
+  {
+    "news_type": "company",
+    "date": "20260218130805",
+    "headline": "A Look At IBM (IBM) Valuation As Short Seller Critique Sparks Fresh Doubts On Its AI Direction",
+    "summary": "International Business Machines (IBM) stock has come under pressure after high profile short seller Jim Chanos questioned the company’s artificial intelligence focus, criticizing an emphasis on marketing and consulting instead of core technology development. See our latest analysis for International Business Machines. The recent criticism has landed during a weak patch for the stock, with a 7 day share price return of an 11.46% decline and a 30 day share price return of a 15.49% decline...",
+    "source": "Yahoo",
+    "url": "https://finnhub.io/api/news?id=e5d6b1873e6ae0184097970da25d1a2eb525c6d23656bb888296c41fc29c4f47",
+    "id": 139134083,
+    "related": "IBM",
+    "sentiment_score": -0.8,
+    "selection_reason": "Precursor signal: High-profile short seller Jim Chanos criticizes IBM's AI focus as marketing/consulting over core tech, sparking fresh doubts on its direction during a weak patch for the stock."
+  },
+  {
+    "news_type": "company",
+    "date": "20260222164836",
+    "headline": "International Business Machines (IBM) Cut to Hold on Weak Consulting Growth and Infrastructure Slowdown",
+    "summary": "International Business Machines Corporation (NYSE:IBM) is one the Top 10 AI Stocks in Focus on Wall Street. On February 18, Erste Group analyst Hans Engel downgraded IBM (NYSE: IBM) from Buy to Hold. Despite IBM’s positive AI outlook, the firm has flagged slowing infrastructure momentum for the stock, weak consulting growth, and financial pressures. These factors, […]",
+    "source": "Yahoo",
+    "url": "https://finnhub.io/api/news?id=d1688e1662597b064ff40dbcbcbacc098aa369549063b80261420b23cb34c551",
+    "id": 139178122,
+    "related": "IBM",
+    "sentiment_score": -0.7,
+    "selection_reason": "Direct catalyst: Analyst downgrade (Buy to Hold) citing weak consulting growth and infrastructure slowdown, directly linking fundamental business pressures to the stock's underperformance."
+  },
+  {
+    "news_type": "company",
+    "date": "20260223210436",
+    "headline": "IBM Sinks Most Since 2000 as Anthropic Touts COBOL Modernization",
+    "summary": "With the decline, the stock is now down 27% in February, on track for its biggest one-month percentage decline since at least 1968, according to data compiled by Bloomberg.  “Modernizing a COBOL system once required armies of consultants spending years mapping workflows” but “tools like Claude Code can automate the exploration and analysis phases that consume most of the effort in COBOL modernization,” Anthropic wrote in a blog post.",
+    "source": "Yahoo",
+    "url": "https://finnhub.io/api/news?id=639751be82cc9135e3c91d02653e29dd3cc4617fcb1139dad8cebdf65e84c6f0",
+    "id": 139187931,
+    "related": "IBM",
+    "sentiment_score": -0.95,
+    "selection_reason": "Major disruption catalyst: Anthropic's Claude Code AI tool threatens IBM's lucrative COBOL modernization/mainframe services business, causing IBM's worst single-day drop since 2000 and erasing ~$30B in market cap."
+  },
+  {
+    "news_type": "company",
+    "date": "20260223165116",
+    "headline": "Why IBM (IBM) Stock Is Down Today",
+    "summary": "Shares of technology and consulting giant IBM (NYSE:IBM) fell 4% in the morning session after the Trump administration's announcement of new global tariffs, reignited trade policy uncertainty. The move came swiftly after the Supreme Court ruled the previous week that the president could not use the International Emergency Economic Powers Act (IEEPA) for such duties, a decision that had initially sent markets higher. However, the administration invoked a different authority, the Trade Act of 1974",
+    "source": "Yahoo",
+    "url": "https://finnhub.io/api/news?id=3ebd746071292710d266e913cce3a0b5b36a125a0c7a231144b53784ca690484",
+    "id": 139186438,
+    "related": "IBM",
+    "sentiment_score": -0.6,
+    "selection_reason": "Macro policy shock: Renewed global tariff uncertainty from Trump administration directly impacts IBM as a global technology and consulting giant, adding to the week's negative pressure."
+  },
+  {
+    "news_type": "company",
+    "date": "20260222180618",
+    "headline": "Dow slides 800 points as sell-off ramps up following Trump's global tariff hike: Live updates",
+    "summary": "Wall Street is coming off a volatile session on Friday after the Supreme Court struck down President Donald Trump’s tariffs. ",
+    "source": "CNBC",
+    "url": "https://finnhub.io/api/news?id=3b75b9c091756ed4e4919ad422fb0910adebde867d4edc7efb23dfa7ed79daa5",
+    "id": 139185766,
+    "related": "IBM",
+    "sentiment_score": -0.5,
+    "selection_reason": "Sector/market context: Broad market sell-off (Dow -800 points) triggered by tariff hikes creates negative sentiment environment, amplifying IBM's company-specific declines."
+  }
+]
