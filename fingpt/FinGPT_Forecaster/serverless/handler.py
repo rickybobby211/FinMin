@@ -37,7 +37,8 @@ print("--- HANDLER STARTUP: Imports finished ---", flush=True)
 MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
 ADAPTER_ID = os.environ.get("ADAPTER_PATH")
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "32768"))
-MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "512"))
+MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "192"))
+SAFE_MIN_COMPLETION_TOKENS = int(os.environ.get("SAFE_MIN_COMPLETION_TOKENS", "192"))
 ANSWER_START_MARKER = "### ANSWER START"
 INCLUDE_PROMPT_IN_RESPONSE = os.environ.get("INCLUDE_PROMPT_IN_RESPONSE", "0")
 TECH_STOCKS = {"AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"}
@@ -48,40 +49,38 @@ MARKET_NEWS_MAX_AGE_DAYS = int(os.environ.get("MARKET_NEWS_MAX_AGE_DAYS", "3"))
 B_INST, E_INST = "<|im_start|>", "<|im_end|>"
 B_SYS, E_SYS = "system\n", "\n<|im_start|>user\n"
 
-SYSTEM_PROMPT = """You are acting as a professional equity analyst.
+SYSTEM_PROMPT = """You are acting as a professional equity analyst. Your task is to predict the most likely stock direction over the following week using only the information available before the cutoff date. Provide a balanced forward-looking analysis rather than acting as an advocate for one side.
 
 You will be given:
 - Company profile and basic financials
 - Weekly historical news headlines and short descriptions
 - Weekly price data
-- Quant signals and technical indicators (RSI, MACD, VIX, ATR, volume, mean reversion, alpha vs market)
+- Quant signals and technical indicators (RSI, MACD, SMA50, SMA200, VIX, ATR, volume, mean reversion)
 
-Your task:
-1. Identify key positive developments from the news/financials.
-2. Identify key negative developments.
-3. Analyze price trend, momentum, and relative performance using the provided quant/technical signals.
-4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
-5. Provide confidence level (0-100%).
+Important analytical rules:
+- You MUST include at least one contradictory signal or risk factor in your analysis. Never provide a pure sunshine story. Always acknowledge what the opposing side of the trade is seeing.
+- Distinguish between signals that support your base-case prediction, signals that argue against it, and the factor that most likely dominates for the next week.
+- Do not confuse pullback risk, overbought conditions, or oversold conditions with the most likely weekly directional base case.
+- Strong trend structure and persistent relative strength can justify continued upside even when some short-term indicators look stretched.
+- Likewise, strong deterioration in trend, flow, or narrative can justify downside even when some fundamentals still look solid.
+- If the evidence conflicts, explain the conflict explicitly instead of forcing all evidence to point in the same direction.
+- Treat the latest quantitative block as the most important context, while older weeks provide supporting background.
+- If the setup is noisy, mixed, or low conviction, say so explicitly and lower confidence instead of presenting the call as clean or certain.
+- Reserve strong conviction language for cases where trend, flow, and narrative materially align.
+- IF NO NEWS ARE PROVIDED: Be cautious. Do not assume the current trend will continue blindly. Base the prediction more on the quantitative and technical context, while recognizing that no-news periods often lead to consolidation or sector-correlated moves.
+- Alpha Dominance & Truth-Teller: If a stock outperforms its index (Positive Alpha), respect this relative strength. Conversely, if a stock rises but has Negative Alpha (underperforming the market), this is a major warning sign of underlying weakness and you must lower confidence regardless of positive news.
+- Ignore Minor Noise (Priced-in): Minor news (like executive sales, analyst updates, or older risks) are often priced in. Do not treat them as the main reason to flip your prediction unless they are accompanied by a massive surge in Volume (Volume Z-Score > 1.0).
+- Recency Bias & Priced-in Logic: The market prices in news very quickly. For news older than 3 days, assume the initial shock is already priced in to the current stock price. However, if the stock is still showing a massive Volume Z-Score (>1.0) and strong directional momentum today, the market may still be actively reacting to that narrative. If volume has returned to normal, the older news is background context rather than the main short-term driver.
+- RSI Warning & Distribution: Extreme RSI (>75 or <25) is a severe warning light, not an absolute veto. If you predict continuation against extreme RSI, you MUST explicitly justify why the narrative or flow is strong enough to override technical exhaustion. If news is very positive but the stock fails to rise or has Negative Alpha, identify that as possible Distribution.
+- Hard Confidence Cap: Confidence MUST NEVER exceed 60% if you identify Distribution, Divergence, Mixed Signals, or if you are predicting continuation against an extreme RSI warning.
 
-Decision rules:
-- Use ONLY the information given.
-- Do NOT reference any future knowledge beyond the cutoff date.
-- The most recent [QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block is the primary signal for the next-week forecast. Older weekly blocks are context, not the final tie-breaker.
-- Follow this signal hierarchy: Technical structure first, flow/relative performance second, news/fundamentals third.
-- Technical structure defines base probability. Strong trend and momentum should outweigh headlines unless the news is a major catalyst.
-- Do not predict UP solely because RSI is oversold. Oversold can remain oversold in a weak tape.
-- If the latest block shows bearish momentum and weak flow together, such as Bearish Crossover plus underperformance vs the market plus weak/normal volume, prefer continuation risk over an immediate rebound unless a strong catalyst clearly changes the setup.
-- If news conflicts with the latest technical structure, explain the divergence explicitly instead of ignoring it.
-- IF NO NEWS ARE PROVIDED: Do not simply say there is no news. Explain the move using market mechanics such as sector rotation, institutional flows, beta-driven index movement, or technical mean reversion/breakout. Be cautious about assuming trend continuation.
-- Mixed or conflicting signals are allowed, but you must still make a clear directional call and lower confidence when conviction is weak.
-- Conclude by labeling the main cause of the forecast as one of: Technical, Flow, Narrative, Mixed, or Unknown.
-
-Output constraints:
-- Output plain text only.
-- Do NOT produce XML, HTML, JSON, markdown code fences, or tool markup.
-- Do NOT output tags such as <tool_call>, </tool_call>, <function>, or similar placeholders.
-- Start the final answer with the exact marker: ### ANSWER START
-- The final answer must include both lines `Prediction:` and `Confidence:` exactly once.
+Follow this analytical hierarchy:
+1. Technical Reality: Technical indicators (RSI, MACD, SMA50, SMA200) define the boundaries of what is plausible. Use SMA200 as long-term regime context, so short-term bearish signals inside a strong bullish structure are usually lower-conviction pullback risks unless other evidence clearly confirms deterioration.
+2. Relative Performance: Always consider Alpha. If the stock underperforms its index despite good news, look for hidden weakness. If it outperforms despite bad news, look for underlying strength.
+3. News Catalyst: Use news to explain the why, but never let news justify a claim that contradicts the quantitative and technical evidence.
+4. Dealing with No News: If there is no clear company catalyst, explain the likely driver as market mechanics, sector flow, relative strength or weakness, volatility, or technical structure rather than vague filler.
+5. Primary Driver: Conclude by categorizing the dominant driver as one of: Technical, Flow, Narrative, Mixed, or Unknown.
+6. Primary Driver Rationale: After choosing the tag, add a short rationale explaining why that driver dominates over competing evidence.
 
 Your answer format must be as follows:
 
@@ -102,7 +101,10 @@ Confidence: [Percentage]%
 Analysis: ...
 
 [Primary Driver]:
-Technical | Flow | Narrative | Mixed | Unknown"""
+Technical | Flow | Narrative | Mixed | Unknown
+
+[Primary Driver Rationale]:
+1-2 concise sentences explaining why that driver dominates."""
 
 # Global model (loaded once, reused for all requests)
 model = None
@@ -273,7 +275,14 @@ class MarketDataManager:
             atr_desc = "High" if atr > current_price * 0.03 else "Normal"
 
             dist_sma50 = (current_price - sma50) / sma50 * 100
+            dist_sma200 = (current_price - sma200) / sma200 * 100
             reversion_desc = "Overextended" if abs(dist_sma50) > 15 else "Normal"
+            if current_price > sma50 > sma200:
+                trend_structure = "Bullish Stack"
+            elif current_price < sma50 < sma200:
+                trend_structure = "Bearish Stack"
+            else:
+                trend_structure = "Mixed Stack"
 
             return {
                 "rsi_daily": rsi_val,
@@ -286,6 +295,8 @@ class MarketDataManager:
                 "atr": atr,
                 "atr_desc": atr_desc,
                 "dist_sma50": dist_sma50,
+                "dist_sma200": dist_sma200,
+                "trend_structure": trend_structure,
                 "reversion_desc": reversion_desc,
             }
         except Exception:
@@ -946,7 +957,14 @@ def get_company_prompt(symbol):
         if not profile:
             return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
         
-        template = "[Company Introduction]:\n\n{name} is a leading entity in the {finnhubIndustry} sector. As of today, {name} has a market capitalization of {marketCapitalization:.2f} in {currency}.\n\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}."
+        template = (
+            "[Company Introduction]:\n\n{name} is a leading entity in the {finnhubIndustry} sector. "
+            "Incorporated and publicly traded since {ipo}, the company has established its reputation "
+            "as one of the key players in the market. As of today, {name} has a market capitalization "
+            "of {marketCapitalization:.2f} in {currency}, with {shareOutstanding:.2f} shares outstanding."
+            "\n\n{name} operates primarily in the {country}, trading under the ticker {ticker} on the {exchange}. "
+            "As a dominant force in the {finnhubIndustry} space, the company continues to innovate and drive progress within the industry."
+        )
         return template.format(**profile)
     except:
         return f"[Company Introduction]:\n\n{symbol} is a publicly traded company."
@@ -1058,23 +1076,19 @@ class PromptBuilder:
         period = f"{self.context.curday} to {end_date_str}"
         
         instruction = (
-            f"Based on all the information before {self.context.curday}, first analyze the "
-            f"positive developments and potential concerns for {self.context.ticker}. Come up with "
-            "2-4 most important factors respectively and keep them concise. Integrate both "
-            "quantitative signals and news to explain the movement. Use the most recent "
-            "[QUANT SIGNALS - STRUCTURAL] and [TECHNICALS - DAILY] block as the primary basis "
-            "for the next-week forecast; older weeks are context only. "
-            f"Then make your prediction for next week ({period}). Provide a summary analysis "
-            "to support your prediction. Before writing the analysis, cross-reference the latest "
-            "[QUANT SIGNALS] with the [NEWS]. Technical structure should carry the most weight, "
-            "flow/relative performance should confirm or weaken conviction, and news should "
-            "provide the narrative context. Do not predict a rebound only because RSI is oversold. "
-            "If the latest signals show bearish momentum plus underperformance versus the market, "
-            "treat continuation risk as the default unless a strong catalyst clearly overrides it. "
-            "If your prediction conflicts with the technicals, explain this divergence logically "
-            "instead of ignoring the data. Conclude with a [Primary Driver] tag using one of "
-            "Technical, Flow, Narrative, Mixed, or Unknown. Return plain text only and never "
-            "output <tool_call> or similar markup."
+            f"Based only on the information available before {self.context.curday}, analyze "
+            f"{self.context.ticker} and predict the most likely direction for next week ({period}). "
+            "First list 2-4 concise Positive Developments and 2-4 concise Potential Concerns. "
+            "Then write a balanced Prediction & Analysis that cross-references the latest "
+            "[QUANT SIGNALS - STRUCTURAL], [TECHNICALS - DAILY], [NEWS], and [Basic Financials]. "
+            "You must explicitly acknowledge at least one contradictory signal or risk factor "
+            "rather than writing a one-sided story. Distinguish the base case from pullback risk. "
+            "If the setup is mixed, noisy, shows divergence or distribution, or continuation depends "
+            "on overriding an extreme RSI warning, keep confidence at or below 60% and explain why. "
+            "If your prediction goes against the strongest technical or alpha evidence, justify the "
+            "exception clearly instead of ignoring the conflict. End with the exact fields "
+            "[Primary Driver] using only Technical, Flow, Narrative, Mixed, or Unknown, followed by "
+            "[Primary Driver Rationale] in 1-2 concise sentences."
         )
         self.parts.append("\n" + instruction)
         return self
@@ -1093,8 +1107,15 @@ def _format_news_block(row: pd.Series, no_news_text: str = "No relative news rep
         for n in news[:5]:
             headline = (n.get("headline") or "").strip()
             summary = (n.get("summary") or "").strip()
+            
+            score_str = ""
+            if "sentiment_score" in n:
+                score = n["sentiment_score"]
+                sign = "+" if score > 0 else ""
+                score_str = f" (Sentiment: {sign}{score:.2f})"
+                
             if headline and summary:
-                formatted.append(f"[Headline]: {headline}\n[Summary]: {summary}\n")
+                formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
     return "\n".join(formatted) if formatted else no_news_text
 
 
@@ -1137,6 +1158,9 @@ def _build_quant_signals_block(ticker: str, row: pd.Series, market_symbol: str, 
     rsi_daily_str = f"{rsi_daily_val:.1f}" if rsi_daily_val is not None else "N/A"
     head += f"- Daily RSI: {rsi_daily_str} ({ta_data.get('rsi_daily_desc', 'N/A')})\n"
     head += f"- Trend: {ta_data.get('trend', 'N/A')}\n"
+    dist_sma200_val = ta_data.get("dist_sma200")
+    dist_sma200_str = f"{dist_sma200_val:+.1f}%" if dist_sma200_val is not None else "N/A"
+    head += f"- Long-Term Trend: {dist_sma200_str} vs SMA200 ({ta_data.get('trend_structure', 'N/A')})\n"
     head += f"- MACD: {ta_data.get('macd', 'N/A')}\n"
 
     dist_sma50_val = ta_data.get("dist_sma50")
@@ -1207,18 +1231,33 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
             "Reduce history/news or increase context window."
         )
 
-    max_new_tokens = min(config.max_new_tokens, available_tokens)
+    max_new_tokens = min(max(config.max_new_tokens, 1024), available_tokens)
+    min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
     inputs = {key: value.to(model.device) for key, value in inputs.items()}
-    answer = _generate_answer(
-        inputs,
-        max_new_tokens,
-        config.min_completion_tokens,
-        config.temperature,
-        input_len,
-    )
+    attempts = [
+        (config.temperature, min_completion_tokens),
+        (config.temperature, min(min_completion_tokens, 160)),
+        (config.temperature, min(min_completion_tokens, 128)),
+    ]
+
+    answer = ""
+    for attempt_idx, (attempt_temp, attempt_min_tokens) in enumerate(attempts, start=1):
+        answer = _generate_answer(
+            inputs,
+            max_new_tokens,
+            attempt_min_tokens,
+            attempt_temp,
+            input_len,
+        )
+        if _is_usable_response(answer):
+            break
+        print(
+            f"Warning: generation attempt {attempt_idx} returned incomplete or artifact-heavy output.",
+            flush=True,
+        )
 
     if not _is_complete_response(answer):
-        print("Warning: response missing Prediction/Confidence.", flush=True)
+        print("Warning: response missing Prediction/Confidence after retries.", flush=True)
 
     return answer, prompt
 
@@ -1239,25 +1278,42 @@ def _build_generation_config(temperature):
 
 
 def _get_context_limit():
-    max_len = getattr(tokenizer, "model_max_length", None)
-    if not max_len or max_len > 100000:
-        max_len = getattr(getattr(model, "config", None), "max_position_embeddings", None)
-    if not max_len or max_len > 100000:
-        max_len = 8192
-    return int(max_len)
+    env_limit = os.environ.get("MAX_CONTEXT_LIMIT")
+    if env_limit:
+        return int(env_limit)
+        
+    # Prefer model config's max_position_embeddings over tokenizer's model_max_length
+    # as tokenizer configs sometimes have incorrect/small defaults (e.g. 4096)
+    max_len = getattr(getattr(model, "config", None), "max_position_embeddings", None)
+    
+    if not max_len or max_len > 200000:
+        max_len = getattr(tokenizer, "model_max_length", None)
+        
+    if not max_len or max_len > 200000:
+        max_len = 32768
+        
+    # Cap at 32768 to avoid OOM on typical RunPod instances
+    return min(int(max_len), 32768)
 
 
 def _generate_answer(inputs, max_new_tokens, min_new_tokens, temperature, input_len):
-    with torch.no_grad():
-        res = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            min_new_tokens=min_new_tokens,
+    generate_kwargs = dict(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        min_new_tokens=min_new_tokens,
+        eos_token_id=tokenizer.eos_token_id,
+        use_cache=True,
+    )
+    if temperature > 0:
+        generate_kwargs.update(
             do_sample=True,
             temperature=temperature,
-            eos_token_id=tokenizer.eos_token_id,
-            use_cache=True,
         )
+    else:
+        generate_kwargs.update(do_sample=False)
+
+    with torch.no_grad():
+        res = model.generate(**generate_kwargs)
 
     output_ids = res[0]
     answer = _extract_assistant_response(output_ids, input_len)
@@ -1315,7 +1371,29 @@ def _clean_answer(text):
         last_idx = lower.rfind("assistant")
         cleaned = cleaned[last_idx + len("assistant"):].strip()
 
-    return cleaned
+    cleaned = _truncate_artifact_tail(cleaned)
+    return cleaned.strip()
+
+
+def _truncate_artifact_tail(text):
+    if not text:
+        return ""
+
+    artifact_patterns = [
+        r"<\s*/?\s*tool_call\b[^>\n]*>",
+        r"<\s*/?\s*function\b[^>\n]*>",
+        r"<\s*/?\s*assistant_response\b[^>\n]*>",
+        r"<\s*/?\s*analysis\b[^>\n]*>",
+        r"<\s*/?\s*response\b[^>\n]*>",
+    ]
+
+    for pattern in artifact_patterns:
+        artifact_match = re.search(pattern, text, flags=re.IGNORECASE)
+        if artifact_match:
+            text = text[:artifact_match.start()]
+            break
+
+    return text.strip()
 
 
 def _env_flag(value):
@@ -1326,7 +1404,21 @@ def _is_complete_response(answer):
     if not answer:
         return False
     lowered = answer.lower()
-    return "prediction:" in lowered and "confidence:" in lowered
+    return (
+        "prediction:" in lowered
+        and "confidence:" in lowered
+        and "primary driver" in lowered
+    )
+
+
+def _is_usable_response(answer):
+    if not _is_complete_response(answer):
+        return False
+    if "<" in answer and ">" in answer:
+        return False
+    if len(answer.strip()) < 40:
+        return False
+    return True
 
 
 # ============================================================================
