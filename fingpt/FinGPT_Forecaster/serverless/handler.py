@@ -49,31 +49,32 @@ MARKET_NEWS_MAX_AGE_DAYS = int(os.environ.get("MARKET_NEWS_MAX_AGE_DAYS", "3"))
 B_INST, E_INST = "<|im_start|>", "<|im_end|>"
 B_SYS, E_SYS = "system\n", "\n<|im_start|>user\n"
 
-SYSTEM_PROMPT = """You are acting as a professional equity analyst.
+SYSTEM_PROMPT = """You are acting as a professional equity analyst. Your task is to predict the most likely stock direction over the following week using only the information available before the cutoff date. Provide a balanced forward-looking analysis rather than acting as an advocate for one side.
 
-You will be given:
-- Company profile and basic financials
-- Weekly historical news headlines and short descriptions
-- Weekly price data
-- Quant signals and technical indicators (RSI, MACD, SMA200, VIX, ATR, volume, mean reversion)
+Important analytical rules:
+- You MUST include at least one contradictory signal or risk factor in your analysis. Never provide a pure sunshine story. Always acknowledge what the opposing side of the trade is seeing.
+- Distinguish between signals that support your base-case prediction, signals that argue against it, and the factor that most likely dominates for the next week.
+- Do not confuse pullback risk, overbought conditions, or oversold conditions with the most likely weekly directional base case.
+- Strong trend structure and persistent relative strength can justify continued upside even when some short-term indicators look stretched.
+- Likewise, strong deterioration in trend, flow, or narrative can justify downside even when some fundamentals still look solid.
+- If the evidence conflicts, explain the conflict explicitly instead of forcing all evidence to point in the same direction.
+- Treat the latest quantitative block as the most important context, while older weeks provide supporting background.
+- If the setup is noisy, mixed, or low conviction, say so explicitly and lower confidence instead of presenting the call as clean or certain.
+- Reserve strong conviction language for cases where trend, flow, and narrative materially align.
+- IF NO NEWS ARE PROVIDED: Be cautious. Do not assume the current trend will continue blindly. Base the prediction more on the quantitative and technical context, while recognizing that no-news periods often lead to consolidation or sector-correlated moves.
+- Alpha Dominance & Truth-Teller: If a stock outperforms its index (Positive Alpha), respect this relative strength. Conversely, if a stock rises but has Negative Alpha (underperforming the market), this is a major warning sign of underlying weakness and you must lower confidence regardless of positive news.
+- Ignore Minor Noise (Priced-in): Minor news (like executive sales, analyst updates, or older risks) are often priced in. Do not treat them as the main reason to flip your prediction unless they are accompanied by a massive surge in Volume (Volume Z-Score > 1.0).
+- Recency Bias & Priced-in Logic: The market prices in news very quickly. For news older than 3 days, assume the initial shock is already priced in to the current stock price. However, if the stock is still showing a massive Volume Z-Score (>1.0) and strong directional momentum today, the market may still be actively reacting to that narrative. If volume has returned to normal, the older news is background context rather than the main short-term driver.
+- RSI Warning & Distribution: Extreme RSI (>75 or <25) is a severe warning light, not an absolute veto. If you predict continuation against extreme RSI, you MUST explicitly justify why the narrative or flow is strong enough to override technical exhaustion. If news is very positive but the stock fails to rise or has Negative Alpha, identify that as possible Distribution.
+- Hard Confidence Cap: Confidence MUST NEVER exceed 60% if you identify Distribution, Divergence, Mixed Signals, or if you are predicting continuation against an extreme RSI warning.
 
-Your task:
-1. Identify key positive developments from the news/financials.
-2. Identify key negative developments.
-3. Analyze price trend and momentum using the provided quant/technical signals.
-4. Provide a next-week price direction prediction (UP or DOWN) with an estimated percentage change.
-5. Provide confidence level (0–100%).
-
-Constraints:
-- Use ONLY the information given.
-- Do NOT reference any future knowledge beyond the cutoff date.
-- IF NO NEWS ARE PROVIDED: Be extremely cautious. Do not assume the current trend will continue blindly. Base your prediction more on valuation (P/E) and fundamental metrics (Profitability, Cash Flow) rather than just price momentum. A lack of news often leads to consolidation or sector-correlated movements.
-- Treat SMA200 as long-term regime context. Short-term bearish signals against a strong bullish trend structure should usually reduce confidence rather than automatically flipping the base case to DOWN, unless news, flow, or relative performance have clearly deteriorated.
-- Alpha Dominance & Truth-Teller: If a stock outperforms its index (Positive Alpha), respect this relative strength. Conversely, if a stock rises but has Negative Alpha (underperforming the market), this is the ultimate warning sign of underlying weakness; you must lower your confidence regardless of positive news.
-- Ignore Minor Noise (Priced-in): Minor news (like executive sales, analyst updates, or older risks) are often "priced in". Do not flip your prediction based on them unless accompanied by a massive surge in Volume (Volume Z-Score > 1.0).
-- Recency Bias & Priced-in Logic: The market prices in news very quickly. For news older than 3 days, assume the initial shock is already 'priced in' to the current stock price. However, if the stock is still showing a massive Volume Z-Score (>1.0) and strong directional momentum today, the market is still actively reacting to that narrative. If volume has returned to normal, the news is dead and should not drive your prediction.
-- RSI Warning & Distribution: Extreme RSI (>75 or <25) is a severe warning light, not an absolute veto. If you predict continuation against extreme RSI, you MUST explicitly justify why the narrative or flow is strong enough to override technical exhaustion. Furthermore, if news is extremely positive but the stock fails to rise (or has negative Alpha), identify this as 'Distribution' (smart money selling).
-- Hard Confidence Cap: Your confidence MUST NEVER exceed 60% if you identify 'Distribution', 'Divergence', 'Mixed Signals', or if you are predicting continuation against an extreme RSI warning.
+Follow this analytical hierarchy:
+1. Technical Reality: Technical indicators (RSI, MACD, SMA50, SMA200) define the boundaries of what is plausible. Use SMA200 as long-term regime context, so short-term bearish signals inside a strong bullish structure are usually lower-conviction pullback risks unless other evidence clearly confirms deterioration.
+2. Relative Performance: Always consider Alpha. If the stock underperforms its index despite good news, look for hidden weakness. If it outperforms despite bad news, look for underlying strength.
+3. News Catalyst: Use news to explain the why, but never let news justify a claim that contradicts the quantitative and technical evidence.
+4. Dealing with No News: If there is no clear company catalyst, explain the likely driver as market mechanics, sector flow, relative strength/weakness, volatility, or technical structure rather than using vague filler.
+5. Primary Driver: Conclude by categorizing the dominant driver as one of: Technical, Flow, Narrative, Mixed, or Unknown.
+6. Primary Driver Rationale: After choosing the tag, add a short rationale explaining why that driver dominates over competing evidence.
 
 Your answer format must be as follows:
 
@@ -91,7 +92,13 @@ Confidence: [Percentage]%
 1. ...
 
 [Prediction & Analysis]
-Analysis: ..."""
+Analysis: ...
+
+[Primary Driver]:
+Technical | Flow | Narrative | Mixed | Unknown
+
+[Primary Driver Rationale]:
+1-2 concise sentences explaining why that driver dominates."""
 
 # Global model (loaded once, reused for all requests)
 model = None
@@ -1063,15 +1070,19 @@ class PromptBuilder:
         period = f"{self.context.curday} to {end_date_str}"
         
         instruction = (
-            f"Based on all the information before {self.context.curday}, let's first analyze the "
-            f"positive developments and potential concerns for {self.context.ticker}. Come up with "
-            "2-4 most important factors respectively and keep them concise. Integrate both "
-            "quantitative signals and news to explain the movement. "
-            f"Then make your prediction for next week ({period}). Provide a summary analysis "
-            "to support your prediction. Before writing the analysis, cross-reference the "
-            "[QUANT SIGNALS] with the [NEWS]. If your prediction conflicts with the technicals "
-            "(e.g., predicting 'Up' when Trend is 'Strong Downtrend'), explain this divergence "
-            "logically rather than ignoring the data."
+            f"Based only on the information available before {self.context.curday}, analyze "
+            f"{self.context.ticker} and predict the most likely direction for next week ({period}). "
+            "First list 2-4 concise Positive Developments and 2-4 concise Potential Concerns. "
+            "Then write a balanced Prediction & Analysis that cross-references the latest "
+            "[QUANT SIGNALS - STRUCTURAL], [TECHNICALS - DAILY], [NEWS], and [Basic Financials]. "
+            "You must explicitly acknowledge at least one contradictory signal or risk factor "
+            "rather than writing a one-sided story. Distinguish the base case from pullback risk. "
+            "If the setup is mixed, noisy, shows divergence/distribution, or continuation depends "
+            "on overriding an extreme RSI warning, keep confidence at or below 60% and explain why. "
+            "If your prediction goes against the strongest technical or alpha evidence, justify the "
+            "exception clearly instead of ignoring the conflict. End with the exact fields "
+            "[Primary Driver] using only Technical, Flow, Narrative, Mixed, or Unknown, followed by "
+            "[Primary Driver Rationale] in 1-2 concise sentences."
         )
         self.parts.append("\n" + instruction)
         return self
@@ -1387,7 +1398,11 @@ def _is_complete_response(answer):
     if not answer:
         return False
     lowered = answer.lower()
-    return "prediction:" in lowered and "confidence:" in lowered
+    return (
+        "prediction:" in lowered
+        and "confidence:" in lowered
+        and "primary driver" in lowered
+    )
 
 
 def _is_usable_response(answer):

@@ -309,7 +309,7 @@ def main():
             mark = "[UNKNOWN]"
             
         # Check if news were missing in prompt
-        has_news = "[Headline]:" in full_prompt
+        has_news = "[Headline]" in full_prompt
         news_status = "" if has_news else " (NO NEWS)"
             
         actual_display = actual_dir if actual_dir is not None else "UNKNOWN"
@@ -347,15 +347,24 @@ def main():
         print(f"  - With News:    {acc_news:.2f}% ({len([r for r in with_news if r['correct']])}/{len(with_news)})")
         print(f"  - Without News: {acc_no_news:.2f}% ({len([r for r in without_news if r['correct']])}/{len(without_news)})")
         
-        # Save CSV
+        # Save CSV: results/<run_date>/backtest_<ticker>_<start>_<n>w.csv
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        results_dir = os.path.join(script_dir, "results")
+        run_date = datetime.now().strftime("%Y-%m-%d")
+        results_dir = os.path.join(script_dir, "results", run_date)
         os.makedirs(results_dir, exist_ok=True)
         
         filename = f"backtest_{args.ticker}_{args.start}_{len(results)}w.csv"
         full_path = os.path.join(results_dir, filename)
         
-        pd.DataFrame(results).to_csv(full_path, index=False)
+        # Explicit column order so adapter is visible; adapter = which model/adapter made the prediction
+        column_order = [
+            "date", "prediction", "actual", "pct_change", "correct", "adapter",
+            "has_news", "start_price", "end_price",
+            "full_text", "prompt_input", "full_prompt",
+        ]
+        df = pd.DataFrame(results)
+        df = df[[c for c in column_order if c in df.columns]]
+        df.to_csv(full_path, index=False)
         print(f"Results saved to {full_path}")
 
 if __name__ == "__main__":

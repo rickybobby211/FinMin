@@ -362,7 +362,8 @@ def prepare_data_for_company(
     data_dir: str,
     with_basics: bool = True,
     rate_limit_delay: float = 1.1,
-    sample_weeks: int = 3
+    sample_weeks: int = 3,
+    incremental_dir: str = ""
 ) -> pd.DataFrame:
     """
     Prepare complete dataset for a single company.
@@ -375,22 +376,93 @@ def prepare_data_for_company(
         data_dir: Directory to save the data
         with_basics: Whether to include basic financials
         rate_limit_delay: Delay between API calls in seconds
+        incremental_dir: Path to existing data directory to incrementally update
     
     Returns:
         DataFrame with all data for the company
     """
     print(f"\nProcessing {symbol}...")
     
-    try:
-        data = get_returns(symbol, start_date, end_date)
-        log_close_to_close_samples(symbol, data, sample_weeks)
-        data = get_news(finnhub_client, symbol, data, rate_limit_delay)
-        
+    old_df = None
+    fetch_start_date = start_date
+    
+    if incremental_dir:
+        inc_path = Path(incremental_dir)
         if with_basics:
-            data = get_basics(finnhub_client, symbol, data, start_date)
+            matching_files = [f for f in inc_path.glob(f"{symbol}_*.csv") if "nobasics" not in f.name]
+        else:
+            matching_files = list(inc_path.glob(f"{symbol}_*_nobasics.csv"))
+            
+        if matching_files:
+            # Use the first match
+            try:
+                old_df = pd.read_csv(matching_files[0])
+                if not old_df.empty and 'End Date' in old_df.columns:
+                    old_df['End Date'] = pd.to_datetime(old_df['End Date'])
+                    old_df['Start Date'] = pd.to_datetime(old_df['Start Date'])
+                    max_end = old_df['End Date'].max()
+                    
+                    # Ensure we don't start fetching after end_date
+                    if max_end >= pd.Timestamp(end_date):
+                        print(f"  Existing data is already up to date ({max_end.strftime('%Y-%m-%d')}).")
+                        fetch_start_date = end_date
+                    else:
+                        # Overlap by 10 days to ensure we get the connecting week
+                        overlap_start = max_end - pd.Timedelta(days=10)
+                        fetch_start_date = overlap_start.strftime('%Y-%m-%d')
+                        print(f"  Found existing data up to {max_end.strftime('%Y-%m-%d')}. Fetching new data from {fetch_start_date}...")
+            except Exception as e:
+                print(f"  Failed to read incremental file {matching_files[0]}: {e}")
+                old_df = None
+
+    try:
+        # If fetch_start_date >= end_date, skip fetching completely
+        if pd.Timestamp(fetch_start_date) >= pd.Timestamp(end_date):
+            data = pd.DataFrame()
+        else:
+            try:
+                data = get_returns(symbol, fetch_start_date, end_date)
+            except ValueError as e:
+                if "No stock data found" in str(e) and old_df is not None:
+                    print(f"  No new prices found for {symbol} since {fetch_start_date}. Using old data.")
+                    data = pd.DataFrame()
+                else:
+                    raise e
+        
+        if not data.empty:
+            log_close_to_close_samples(symbol, data, sample_weeks)
+            data = get_news(finnhub_client, symbol, data, rate_limit_delay)
+            
+            if with_basics:
+                # get_basics requires the overall start_date logic
+                data = get_basics(finnhub_client, symbol, data, start_date)
+            else:
+                data['Basics'] = [json.dumps({})] * len(data)
+
+        if old_df is not None:
+            if not data.empty:
+                data['End Date'] = pd.to_datetime(data['End Date'])
+                data['Start Date'] = pd.to_datetime(data['Start Date'])
+                combined = pd.concat([old_df, data], ignore_index=True)
+                
+                # Deduplicate on End Date, keeping the new data (last)
+                combined = combined.drop_duplicates(subset=['End Date'], keep='last')
+                combined = combined.sort_values('End Date').reset_index(drop=True)
+                data = combined
+            else:
+                data = old_df
+                
+        if data.empty:
+            print(f"  No data to save for {symbol}.")
+            return data
+            
+        # Format dates as strings for CSV to maintain original format
+        data['End Date'] = pd.to_datetime(data['End Date']).dt.strftime('%Y-%m-%d')
+        data['Start Date'] = pd.to_datetime(data['Start Date']).dt.strftime('%Y-%m-%d')
+
+        if with_basics:
             output_file = f"{data_dir}/{symbol}_{start_date}_{end_date}.csv"
         else:
-            data['Basics'] = [json.dumps({})] * len(data)
             output_file = f"{data_dir}/{symbol}_{start_date}_{end_date}_nobasics.csv"
         
         data.to_csv(output_file, index=False)
@@ -423,6 +495,8 @@ def main():
                         help='Delay between Finnhub API calls in seconds (default: 0.25s for paid tier: 300 calls/min)')
     parser.add_argument('--sample_weeks', type=int, default=3,
                         help='Number of close-to-close weekly rows to print per symbol for spot checks')
+    parser.add_argument('--incremental_from', type=str, default='',
+                        help='Path to existing directory to incrementally update from (e.g. ./raw_data/2023-03-17_2026-03-17)')
     args = parser.parse_args()
     
     # Get API key
@@ -453,6 +527,7 @@ def main():
     print(f"Symbols: {len(symbols)} companies")
     print(f"Include Financials: {with_basics}")
     print(f"Output Directory: {data_dir}")
+    print(f"Incremental From: {args.incremental_from if args.incremental_from else 'None'}")
     print("=" * 60)
     
     # Process each company
@@ -462,7 +537,7 @@ def main():
     for symbol in symbols:
         result = prepare_data_for_company(
             finnhub_client, symbol, args.start_date, args.end_date, 
-            data_dir, with_basics, args.rate_limit_delay, args.sample_weeks
+            data_dir, with_basics, args.rate_limit_delay, args.sample_weeks, args.incremental_from
         )
         if not result.empty:
             successful += 1
