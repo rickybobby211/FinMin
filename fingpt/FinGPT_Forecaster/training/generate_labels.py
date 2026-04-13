@@ -93,7 +93,47 @@ class MarketDataManager:
                 if cls._instance is None:
                     cls._instance = super(MarketDataManager, cls).__new__(cls)
                     cls._instance.data = {}
+                    cls._instance.data_sources = {}
+                    cls._instance.cache_dir = None
         return cls._instance
+
+    def set_cache_dir(self, data_dir: str) -> None:
+        """Persist daily OHLCV snapshots under the active raw-data directory."""
+        self.cache_dir = Path(data_dir) / "_market_data"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _cache_path(self, symbol: str) -> Optional[Path]:
+        if self.cache_dir is None:
+            return None
+        safe_symbol = re.sub(r"[^A-Za-z0-9._-]+", "_", symbol)
+        return self.cache_dir / f"{safe_symbol}.csv"
+
+    def _load_cached_data(self, symbol: str) -> pd.DataFrame:
+        """Load a previously persisted daily market snapshot if present."""
+        cache_path = self._cache_path(symbol)
+        if cache_path is None or not cache_path.exists():
+            return pd.DataFrame()
+
+        try:
+            df = pd.read_csv(cache_path)
+            return self._normalize_price_df(df)
+        except Exception as e:
+            print(f"    Warning: Failed to read cached market data for {symbol}: {e}")
+            return pd.DataFrame()
+
+    def _save_cached_data(self, symbol: str, df: pd.DataFrame) -> None:
+        """Persist fetched market data so future label runs reuse the same snapshot."""
+        cache_path = self._cache_path(symbol)
+        if cache_path is None or df is None or df.empty:
+            return
+
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_df = df.reset_index().rename(columns={"index": "Date"})
+            snapshot_df["Date"] = pd.to_datetime(snapshot_df["Date"]).dt.strftime("%Y-%m-%d")
+            snapshot_df.to_csv(cache_path, index=False)
+        except Exception as e:
+            print(f"    Warning: Failed to cache market data for {symbol}: {e}")
 
     def _normalize_price_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize index/columns so downstream calculations are consistent."""
@@ -166,14 +206,63 @@ class MarketDataManager:
     
     def get_data(self, symbol: str) -> pd.DataFrame:
         if symbol not in self.data:
-            print(f"    Downloading market data for {symbol}...")
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            df = self._download_from_yahoo_once(symbol, end_date)
+            df = self._load_cached_data(symbol)
+            if not df.empty:
+                print(f"    Loaded cached market data for {symbol}...")
+                self.data_sources[symbol] = "disk_cache"
+            else:
+                print(f"    Downloading market data for {symbol}...")
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                df = self._download_from_yahoo_once(symbol, end_date)
+                if df.empty:
+                    print(f"    Yahoo failed for {symbol}. Falling back to Stooq...")
+                    df = self._download_from_stooq(symbol, end_date)
+                    self.data_sources[symbol] = "stooq" if not df.empty else "unavailable"
+                else:
+                    self.data_sources[symbol] = "yahoo"
+
+                if not df.empty:
+                    self._save_cached_data(symbol, df)
+
             if df.empty:
-                print(f"    Yahoo failed for {symbol}. Falling back to Stooq...")
-                df = self._download_from_stooq(symbol, end_date)
+                self.data_sources[symbol] = "unavailable"
             self.data[symbol] = df
         return self.data[symbol]
+
+    def validate_symbol_data(
+        self,
+        symbol: str,
+        *,
+        require_ohlcv: bool = False,
+        min_price_rows: int = 1,
+    ) -> Dict[str, Any]:
+        """Validate that a symbol has enough local/live data for downstream metrics."""
+        df = self.get_data(symbol)
+        issues: List[str] = []
+
+        if df.empty:
+            issues.append("no market data rows available")
+        else:
+            price_col = "Close" if "Close" in df.columns else "Adj Close" if "Adj Close" in df.columns else None
+            if price_col is None:
+                issues.append("missing Close/Adj Close column")
+            else:
+                price_rows = int(df[price_col].dropna().shape[0])
+                if price_rows < min_price_rows:
+                    issues.append(f"only {price_rows} price rows available (need >= {min_price_rows})")
+
+            if require_ohlcv:
+                missing_cols = [col for col in ["Open", "High", "Low", "Volume"] if col not in df.columns]
+                if missing_cols:
+                    issues.append(f"missing OHLCV columns: {', '.join(missing_cols)}")
+
+        return {
+            "ok": not issues,
+            "issues": issues,
+            "rows": int(df.shape[0]),
+            "columns": list(df.columns),
+            "source": self.data_sources.get(symbol, "unknown"),
+        }
 
     def get_return(self, symbol: str, start_date: str, end_date: str) -> float:
         """Calculate return for a specific period."""
@@ -223,12 +312,13 @@ class MarketDataManager:
         """Get VIX data dict."""
         try:
             vix_df = self.get_data("^VIX")
+            price_col = 'Close' if 'Close' in vix_df.columns else 'Adj Close'
             dt = pd.to_datetime(date_str)
-            idx = vix_df.index.get_indexer([dt], method='pad')[0]
+            prices = vix_df[price_col]
+            idx = prices.index.get_indexer([dt], method='pad')[0]
             if idx == -1: return {}
             
-            vix_val = vix_df.iloc[idx]
-            if isinstance(vix_val, pd.Series): vix_val = vix_val.item()
+            vix_val = prices.iloc[idx]
             
             desc = "High Fear" if vix_val > 30 else "Elevated Uncertainty" if vix_val > 20 else "Calm"
             return {"value": vix_val, "desc": desc}
@@ -457,7 +547,6 @@ Important analytical rules:
 - Ignore Minor Noise (Priced-in): Minor news (like executive sales, analyst updates, or older risks) are often "priced in". Do not frame them as primary drivers unless accompanied by a massive surge in Volume (Volume Z-Score > 1.0).
 - Recency Bias & Priced-in Logic: The market prices in news very quickly. For news older than 3 days, assume the initial shock is already 'priced in' to the current stock price. However, if the stock is still showing a massive Volume Z-Score (>1.0) and strong directional momentum today, the market is still actively reacting to that narrative. If volume has returned to normal, the news is dead and should not drive your prediction.
 - RSI Warning & Distribution: Extreme RSI (>75 or <25) is a severe warning light, not an absolute veto. If you predict continuation against extreme RSI, you MUST explicitly justify why the narrative or flow is strong enough to override technical exhaustion. Furthermore, if news is extremely positive but the stock fails to rise (or has negative Alpha), identify this as 'Distribution' (smart money selling).
-- Hard Confidence Cap: Your confidence MUST NEVER exceed 60% if you identify 'Distribution', 'Divergence', 'Mixed Signals', or if you are predicting continuation against an extreme RSI warning.
 
 Your answer format should be as follows:
 
@@ -606,6 +695,7 @@ def get_prompt_by_row(symbol: str, row: pd.Series, market_return: float = 0.0, m
             news_raw = []
     except:
         news_raw = []
+    news_raw = dedupe_news_items(news_raw)
     
     # Filter and format news
     formatted_news = []
@@ -664,6 +754,42 @@ def _is_spam(item: dict) -> bool:
             return True
             
     return False
+
+
+def _normalize_news_identity(value: Any) -> str:
+    """Normalize raw field values for exact duplicate detection."""
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def dedupe_news_items(news_items: list) -> list:
+    """
+    Remove duplicate news entries while preserving order.
+
+    This keeps each prompt row isolated and avoids repeated news blocks when
+    the upstream feed returns the same item multiple times.
+    """
+    deduped = []
+    seen = set()
+
+    for item in news_items or []:
+        if isinstance(item, dict):
+            key = (
+                _normalize_news_identity(item.get("date", "")),
+                _normalize_news_identity(item.get("headline", "")),
+                _normalize_news_identity(item.get("summary", "")),
+            )
+        else:
+            key = ("raw", _normalize_news_identity(item))
+
+        if not any(key):
+            continue
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(item)
+
+    return deduped
 
 
 def _parse_news_date(date_str: str) -> Optional[datetime]:
@@ -1218,7 +1344,10 @@ def get_all_prompts(
 ) -> list:
     """
     Generate all prompts for a symbol from the prepared data.
-    
+
+    Each prompt is built from a fresh per-row context so prompt text cannot
+    leak recursively across rows.
+
     Returns list of (prompt, prediction_label) tuples.
     """
     # Load data
@@ -1233,6 +1362,7 @@ def get_all_prompts(
         return []
     
     df = pd.read_csv(csv_file[0])
+    market_manager.set_cache_dir(data_dir)
     company_prompt = get_company_prompt(finnhub_client, symbol)
 
     # Determine market index for context
@@ -1240,6 +1370,36 @@ def get_all_prompts(
     market_symbol = "QQQ" if symbol in tech_stocks else "SPY"
     market_name = "Nasdaq-100" if market_symbol == "QQQ" else "S&P 500"
     empty_reason_log_file = str(Path(data_dir) / "news_empty_reason_log.jsonl")
+
+    validation_errors = []
+    validation_checks = [
+        (symbol, True, 200, "daily technical indicators"),
+        (market_symbol, False, 20, f"{market_name} benchmark returns"),
+    ]
+    for validation_symbol, require_ohlcv, min_price_rows, purpose in validation_checks:
+        validation = market_manager.validate_symbol_data(
+            validation_symbol,
+            require_ohlcv=require_ohlcv,
+            min_price_rows=min_price_rows,
+        )
+        if not validation["ok"]:
+            issues = "; ".join(validation["issues"])
+            validation_errors.append(
+                f"{validation_symbol} ({purpose}) via {validation['source']}: {issues}"
+            )
+
+    if validation_errors:
+        joined_errors = "\n      - ".join(validation_errors)
+        raise RuntimeError(
+            f"Market data validation failed for {symbol}. Refusing to generate labels with broken technicals.\n"
+            f"      - {joined_errors}\n"
+            f"      Tip: re-run prepare_latest_data.py to refresh/save _market_data snapshots, then rerun generate_labels.py."
+        )
+
+    vix_validation = market_manager.validate_symbol_data("^VIX", require_ohlcv=False, min_price_rows=5)
+    if not vix_validation["ok"]:
+        issues = "; ".join(vix_validation["issues"])
+        print(f"    Warning: VIX context unavailable via {vix_validation['source']}: {issues}")
 
     # --- STEP 1: Pre-process all rows (Lightweight & Sequential) ---
     # We gather all technicals, basics, and raw news first without calling LLM.
@@ -1276,63 +1436,36 @@ def get_all_prompts(
     # This step is now parallelized!
     
     def _build_single_prompt_worker(p_row):
-        # Determine history window
-        curr_idx = p_row["idx"]
-        
-        # If not enough history, skip
-        if curr_idx < min_past_weeks:
-            return None
-
-        # Randomly choose history length
-        # Note: In parallel execution, random is thread-safe enough for this
-        hist_len = min(random.choice(range(min_past_weeks, max_past_weeks + 1)), curr_idx)
-        
-        prompt_parts = []
-        
-        # Build history context
-        for i in range(curr_idx - hist_len, curr_idx):
-            hist_row = processed_rows[i]
-            prompt_parts.append("\\n" + hist_row["head"])
-            
-            # NEWS SELECTION (The heavy part if using LLM)
-            # We use the raw news from the historical row
-            sampled_news = sample_news(
-                hist_row["news_raw"],
-                min(5, len(hist_row["news_raw"])),
-                strategy=news_strategy,
-                start_date=hist_row["start_date"],
-                end_date=hist_row["end_date"],
-                symbol=symbol,
-                client=client,
-                model=model,
-                stock_return=hist_row["stock_ret"],
-                market_return=hist_row["market_ret"],
-                market_name=market_name,
-                alpha=hist_row["alpha"],
-                vol_z=hist_row["vol_z"],
-                pre_filter_client=pre_filter_client,
-                pre_filter_model=pre_filter_model,
-                empty_reason_log_file=empty_reason_log_file
-            )
-            
-            formatted = format_news_items(sampled_news)
-            if formatted:
-                prompt_parts.append("\\n".join(formatted))
-            else:
-                prompt_parts.append("No relative news reported.")
-
-        # Add current row context (Target)
-        # Note: The prompt asks to predict NEXT week, so we provide info UP TO start_date
-        # p_row["basics"] and p_row["head"] contain info ending at p_row["end_date"]? 
-        # Wait, the prompt structure in original code was:
-        # prompt = company + history + basics + instruction
-        # And history was built from prev_rows.
-        
-        prompt_str = ""
-        prompt_str += "\\n".join(prompt_parts)
-        
         if noise_band_pct > 0 and is_noise_move(p_row["stock_ret"], noise_band_pct):
             return None
+
+        sampled_news = sample_news(
+            p_row["news_raw"],
+            min(5, len(p_row["news_raw"])),
+            strategy=news_strategy,
+            start_date=p_row["start_date"],
+            end_date=p_row["end_date"],
+            symbol=symbol,
+            client=client,
+            model=model,
+            stock_return=p_row["stock_ret"],
+            market_return=p_row["market_ret"],
+            market_name=market_name,
+            alpha=p_row["alpha"],
+            vol_z=p_row["vol_z"],
+            pre_filter_client=pre_filter_client,
+            pre_filter_model=pre_filter_model,
+            empty_reason_log_file=empty_reason_log_file
+        )
+
+        formatted_news = format_news_items(dedupe_news_items(sampled_news))
+        prompt_sections = [p_row["head"].rstrip()]
+        if formatted_news:
+            prompt_sections.append("\\n".join(formatted_news).strip())
+        else:
+            prompt_sections.append("No relevant news reported.")
+
+        prompt_str = "\\n".join(section for section in prompt_sections if section).strip()
 
         prediction = map_bin_label(p_row["bin_label"])
         realized_return_pct = p_row["stock_ret"] * 100.0
@@ -1634,8 +1767,10 @@ def main():
                         help='LLM backend: openai, deepseek, openrouter, or ollama (FREE local)')
     parser.add_argument('--model', type=str, default='gpt-3.5-turbo',
                         help='Model name. OpenAI: gpt-4o-mini. DeepSeek: deepseek-chat/reasoner. OpenRouter: deepseek/deepseek-v3.2. Ollama: llama3.1')
-    parser.add_argument('--min_weeks', type=int, default=1, help='Minimum past weeks of context')
-    parser.add_argument('--max_weeks', type=int, default=4, help='Maximum past weeks of context')
+    parser.add_argument('--min_weeks', type=int, default=1,
+                        help='Deprecated compatibility flag; prompts now use isolated per-row context')
+    parser.add_argument('--max_weeks', type=int, default=4,
+                        help='Deprecated compatibility flag; prompts now use isolated per-row context')
     parser.add_argument('--no_basics', action='store_true', help='Process nobasics files')
     parser.add_argument('--parallel', type=int, default=5,
                         help='Number of parallel API requests (default: 5, use 1 for sequential)')
@@ -1726,7 +1861,7 @@ def main():
     print(f"Parallel: {args.parallel} concurrent requests")
     print(f"Data Directory: {args.data_dir}")
     print(f"Symbols: {len(symbols)} companies")
-    print(f"Context: {args.min_weeks}-{args.max_weeks} weeks")
+    print("Context: isolated per-row prompt window (history stacking disabled)")
     print(f"Noise band: +/-{args.noise_band_pct:.2f}%")
     print("=" * 60)
     

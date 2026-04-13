@@ -36,9 +36,7 @@ print("--- HANDLER STARTUP: Imports finished ---", flush=True)
 
 MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
 ADAPTER_ID = os.environ.get("ADAPTER_PATH")
-DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "32768"))
-MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "192"))
-SAFE_MIN_COMPLETION_TOKENS = int(os.environ.get("SAFE_MIN_COMPLETION_TOKENS", "192"))
+DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "1024"))
 MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "192"))
 SAFE_MIN_COMPLETION_TOKENS = int(os.environ.get("SAFE_MIN_COMPLETION_TOKENS", "192"))
 ANSWER_START_MARKER = "### ANSWER START"
@@ -68,7 +66,7 @@ Important analytical rules:
 - Ignore Minor Noise (Priced-in): Minor news (like executive sales, analyst updates, or older risks) are often priced in. Do not treat them as the main reason to flip your prediction unless they are accompanied by a massive surge in Volume (Volume Z-Score > 1.0).
 - Recency Bias & Priced-in Logic: The market prices in news very quickly. For news older than 3 days, assume the initial shock is already priced in to the current stock price. However, if the stock is still showing a massive Volume Z-Score (>1.0) and strong directional momentum today, the market may still be actively reacting to that narrative. If volume has returned to normal, the older news is background context rather than the main short-term driver.
 - RSI Warning & Distribution: Extreme RSI (>75 or <25) is a severe warning light, not an absolute veto. If you predict continuation against extreme RSI, you MUST explicitly justify why the narrative or flow is strong enough to override technical exhaustion. If news is very positive but the stock fails to rise or has Negative Alpha, identify that as possible Distribution.
-- Hard Confidence Cap: Confidence MUST NEVER exceed 60% if you identify Distribution, Divergence, Mixed Signals, or if you are predicting continuation against an extreme RSI warning.
+- Confidence Discipline: If you identify Distribution, Divergence, Mixed Signals, or predict continuation against an extreme RSI warning, explicitly explain the elevated uncertainty instead of pretending the setup is clean.
 
 Follow this analytical hierarchy:
 1. Technical Reality: Technical indicators (RSI, MACD, SMA50, SMA200) define the boundaries of what is plausible. Use SMA200 as long-term regime context, so short-term bearish signals inside a strong bullish structure are usually lower-conviction pullback risks unless other evidence clearly confirms deterioration.
@@ -97,10 +95,6 @@ Confidence: [Percentage]%
 Analysis: ...
 
 [Primary Driver]:
-Technical | Flow | Narrative | Mixed | Unknown
-
-[Primary Driver Rationale]:
-1-2 concise sentences explaining why that driver dominates."""
 Technical | Flow | Narrative | Mixed | Unknown
 
 [Primary Driver Rationale]:
@@ -276,14 +270,7 @@ class MarketDataManager:
 
             dist_sma50 = (current_price - sma50) / sma50 * 100
             dist_sma200 = (current_price - sma200) / sma200 * 100
-            dist_sma200 = (current_price - sma200) / sma200 * 100
             reversion_desc = "Overextended" if abs(dist_sma50) > 15 else "Normal"
-            if current_price > sma50 > sma200:
-                trend_structure = "Bullish Stack"
-            elif current_price < sma50 < sma200:
-                trend_structure = "Bearish Stack"
-            else:
-                trend_structure = "Mixed Stack"
             if current_price > sma50 > sma200:
                 trend_structure = "Bullish Stack"
             elif current_price < sma50 < sma200:
@@ -302,8 +289,6 @@ class MarketDataManager:
                 "atr": atr,
                 "atr_desc": atr_desc,
                 "dist_sma50": dist_sma50,
-                "dist_sma200": dist_sma200,
-                "trend_structure": trend_structure,
                 "dist_sma200": dist_sma200,
                 "trend_structure": trend_structure,
                 "reversion_desc": reversion_desc,
@@ -1101,7 +1086,8 @@ class PromptBuilder:
             "You must explicitly acknowledge at least one contradictory signal or risk factor "
             "rather than writing a one-sided story. Distinguish the base case from pullback risk. "
             "If the setup is mixed, noisy, shows divergence/distribution, or continuation depends "
-            "on overriding an extreme RSI warning, keep confidence at or below 60% and explain why. "
+            "on overriding an extreme RSI warning, explicitly explain the elevated uncertainty instead "
+            "of pretending the setup is cleaner than it is. "
             "If your prediction goes against the strongest technical or alpha evidence, justify the "
             "exception clearly instead of ignoring the conflict. End with the exact fields "
             "[Primary Driver] using only Technical, Flow, Narrative, Mixed, or Unknown, followed by "
@@ -1124,22 +1110,14 @@ def _format_news_block(row: pd.Series, no_news_text: str = "No relative news rep
         for n in news[:5]:
             headline = (n.get("headline") or "").strip()
             summary = (n.get("summary") or "").strip()
-            
+
             score_str = ""
             if "sentiment_score" in n:
                 score = n["sentiment_score"]
                 sign = "+" if score > 0 else ""
                 score_str = f" (Sentiment: {sign}{score:.2f})"
-                
-            
-            score_str = ""
-            if "sentiment_score" in n:
-                score = n["sentiment_score"]
-                sign = "+" if score > 0 else ""
-                score_str = f" (Sentiment: {sign}{score:.2f})"
-                
+
             if headline and summary:
-                formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
                 formatted.append(f"[Headline]{score_str}: {headline}\n[Summary]: {summary}\n")
     return "\n".join(formatted) if formatted else no_news_text
 
@@ -1261,30 +1239,7 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
 
     max_new_tokens = min(max(config.max_new_tokens, 1024), available_tokens)
     min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
-    max_new_tokens = min(max(config.max_new_tokens, 1024), available_tokens)
-    min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
     inputs = {key: value.to(model.device) for key, value in inputs.items()}
-    attempts = [
-        (config.temperature, min_completion_tokens),
-        (config.temperature, min(min_completion_tokens, 160)),
-        (config.temperature, min(min_completion_tokens, 128)),
-    ]
-
-    answer = ""
-    for attempt_idx, (attempt_temp, attempt_min_tokens) in enumerate(attempts, start=1):
-        answer = _generate_answer(
-            inputs,
-            max_new_tokens,
-            attempt_min_tokens,
-            attempt_temp,
-            input_len,
-        )
-        if _is_usable_response(answer):
-            break
-        print(
-            f"Warning: generation attempt {attempt_idx} returned incomplete or artifact-heavy output.",
-            flush=True,
-        )
     attempts = [
         (config.temperature, min_completion_tokens),
         (config.temperature, min(min_completion_tokens, 160)),
@@ -1309,7 +1264,6 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
 
     if not _is_complete_response(answer):
         print("Warning: response missing Prediction/Confidence after retries.", flush=True)
-        print("Warning: response missing Prediction/Confidence after retries.", flush=True)
 
     return answer, prompt
 
@@ -1333,55 +1287,22 @@ def _get_context_limit():
     env_limit = os.environ.get("MAX_CONTEXT_LIMIT")
     if env_limit:
         return int(env_limit)
-        
+
     # Prefer model config's max_position_embeddings over tokenizer's model_max_length
     # as tokenizer configs sometimes have incorrect/small defaults (e.g. 4096)
     max_len = getattr(getattr(model, "config", None), "max_position_embeddings", None)
-    
+
     if not max_len or max_len > 200000:
         max_len = getattr(tokenizer, "model_max_length", None)
-        
+
     if not max_len or max_len > 200000:
         max_len = 32768
-        
-    # Cap at 32768 to avoid OOM on typical RunPod instances
-    return min(int(max_len), 32768)
-    env_limit = os.environ.get("MAX_CONTEXT_LIMIT")
-    if env_limit:
-        return int(env_limit)
-        
-    # Prefer model config's max_position_embeddings over tokenizer's model_max_length
-    # as tokenizer configs sometimes have incorrect/small defaults (e.g. 4096)
-    max_len = getattr(getattr(model, "config", None), "max_position_embeddings", None)
-    
-    if not max_len or max_len > 200000:
-        max_len = getattr(tokenizer, "model_max_length", None)
-        
-    if not max_len or max_len > 200000:
-        max_len = 32768
-        
+
     # Cap at 32768 to avoid OOM on typical RunPod instances
     return min(int(max_len), 32768)
 
 
 def _generate_answer(inputs, max_new_tokens, min_new_tokens, temperature, input_len):
-    generate_kwargs = dict(
-        **inputs,
-        max_new_tokens=max_new_tokens,
-        min_new_tokens=min_new_tokens,
-        eos_token_id=tokenizer.eos_token_id,
-        use_cache=True,
-    )
-    if temperature > 0:
-        generate_kwargs.update(
-            do_sample=True,
-            temperature=temperature,
-        )
-    else:
-        generate_kwargs.update(do_sample=False)
-
-    with torch.no_grad():
-        res = model.generate(**generate_kwargs)
     generate_kwargs = dict(
         **inputs,
         max_new_tokens=max_new_tokens,
@@ -1479,29 +1400,6 @@ def _truncate_artifact_tail(text):
             break
 
     return text.strip()
-    cleaned = _truncate_artifact_tail(cleaned)
-    return cleaned.strip()
-
-
-def _truncate_artifact_tail(text):
-    if not text:
-        return ""
-
-    artifact_patterns = [
-        r"<\s*/?\s*tool_call\b[^>\n]*>",
-        r"<\s*/?\s*function\b[^>\n]*>",
-        r"<\s*/?\s*assistant_response\b[^>\n]*>",
-        r"<\s*/?\s*analysis\b[^>\n]*>",
-        r"<\s*/?\s*response\b[^>\n]*>",
-    ]
-
-    for pattern in artifact_patterns:
-        artifact_match = re.search(pattern, text, flags=re.IGNORECASE)
-        if artifact_match:
-            text = text[:artifact_match.start()]
-            break
-
-    return text.strip()
 
 
 def _env_flag(value):
@@ -1512,21 +1410,6 @@ def _is_complete_response(answer):
     if not answer:
         return False
     lowered = answer.lower()
-    return (
-        "prediction:" in lowered
-        and "confidence:" in lowered
-        and "primary driver" in lowered
-    )
-
-
-def _is_usable_response(answer):
-    if not _is_complete_response(answer):
-        return False
-    if "<" in answer and ">" in answer:
-        return False
-    if len(answer.strip()) < 40:
-        return False
-    return True
     return (
         "prediction:" in lowered
         and "confidence:" in lowered

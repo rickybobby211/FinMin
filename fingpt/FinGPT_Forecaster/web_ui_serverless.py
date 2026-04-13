@@ -23,16 +23,16 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 TRAINED_TICKERS = [
     "AAPL",
     "AMZN",
-    "CAT",
-    "CVX",
+    "CRM",
+    "CSCO",
     "GOOGL",
-    "HD",
-    "JPM",
+    "IBM",
+    "INTC",
+    "META",
     "MSFT",
     "NVDA",
-    "PG",
-    "UNH",
-    "WMT",
+    "TSLA",
+    "TSM",
 ]
 
 # Try to get API KEY from Streamlit secrets, environment variable, or fallback
