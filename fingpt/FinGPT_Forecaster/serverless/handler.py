@@ -39,6 +39,9 @@ ADAPTER_ID = os.environ.get("ADAPTER_PATH")
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "1024"))
 MIN_COMPLETION_TOKENS = int(os.environ.get("MIN_COMPLETION_TOKENS", "192"))
 SAFE_MIN_COMPLETION_TOKENS = int(os.environ.get("SAFE_MIN_COMPLETION_TOKENS", "192"))
+PROMPT_TOKEN_BUDGET = int(os.environ.get("PROMPT_TOKEN_BUDGET", "7000"))
+PROMPT_NEWS_ITEMS = int(os.environ.get("PROMPT_NEWS_ITEMS", "5"))
+PROMPT_SUMMARY_CHAR_LIMIT = int(os.environ.get("PROMPT_SUMMARY_CHAR_LIMIT", "0"))
 ANSWER_START_MARKER = "### ANSWER START"
 INCLUDE_PROMPT_IN_RESPONSE = os.environ.get("INCLUDE_PROMPT_IN_RESPONSE", "0")
 TECH_STOCKS = {"AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "CRM", "NFLX"}
@@ -1018,6 +1021,14 @@ class PromptContext:
     use_basics: bool
     use_quant_signals: bool
     week_mode: str
+    prompt_budget: "PromptBudget"
+
+
+@dataclass(frozen=True)
+class PromptBudget:
+    news_item_limit: int
+    summary_char_limit: int
+    include_basics: bool = True
 
 
 class PromptBuilder:
@@ -1040,7 +1051,13 @@ class PromptBuilder:
                     self.context.market_name,
                 )
                 self.parts.append("\n" + quant_block)
-                self.parts.append(_format_news_block(row))
+                self.parts.append(
+                    _format_news_block(
+                        row,
+                        news_item_limit=self.context.prompt_budget.news_item_limit,
+                        summary_char_limit=self.context.prompt_budget.summary_char_limit,
+                    )
+                )
             else:
                 start_date = row["Start Date"].strftime("%Y-%m-%d")
                 end_date = row["End Date"].strftime("%Y-%m-%d")
@@ -1050,11 +1067,18 @@ class PromptBuilder:
                     f"from {row['Start Price']:.2f} to {row['End Price']:.2f}. "
                     "Company news during this period are listed below:\n\n"
                 )
-                self.parts.append(_format_news_block(row, no_news_text="No news reported."))
+                self.parts.append(
+                    _format_news_block(
+                        row,
+                        no_news_text="No news reported.",
+                        news_item_limit=self.context.prompt_budget.news_item_limit,
+                        summary_char_limit=self.context.prompt_budget.summary_char_limit,
+                    )
+                )
         return self
 
     def add_basics(self):
-        if not self.context.use_basics:
+        if not self.context.use_basics or not self.context.prompt_budget.include_basics:
             return self
         basics = get_current_basics(self.context.ticker, self.context.curday)
         if basics:
@@ -1100,16 +1124,28 @@ class PromptBuilder:
         return "\n".join(part for part in self.parts if part).strip()
 
 
-def _format_news_block(row: pd.Series, no_news_text: str = "No relative news reported.") -> str:
+def _truncate_text(text: str, limit: int) -> str:
+    if not text or limit <= 0 or len(text) <= limit:
+        return text
+    clipped = text[: max(0, limit - 3)].rstrip()
+    return clipped + "..."
+
+
+def _format_news_block(
+    row: pd.Series,
+    no_news_text: str = "No relative news reported.",
+    news_item_limit: int = PROMPT_NEWS_ITEMS,
+    summary_char_limit: int = PROMPT_SUMMARY_CHAR_LIMIT,
+) -> str:
     try:
         news = json.loads(row["News"])
     except Exception:
         news = []
     formatted = []
     if isinstance(news, list):
-        for n in news[:5]:
+        for n in news[: max(0, news_item_limit)]:
             headline = (n.get("headline") or "").strip()
-            summary = (n.get("summary") or "").strip()
+            summary = _truncate_text((n.get("summary") or "").strip(), summary_char_limit)
 
             score_str = ""
             if "sentiment_score" in n:
@@ -1176,17 +1212,42 @@ def _build_quant_signals_block(ticker: str, row: pd.Series, market_symbol: str, 
     return head
 
 
-def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals=True, week_mode="fri_fri"):
-    """Build the full prompt for the model."""
-    steps = [n_weeks_before(curday, n) for n in range(n_weeks + 1)][::-1]
+def _candidate_prompt_budgets(use_basics: bool) -> list[PromptBudget]:
+    budgets = [
+        PromptBudget(PROMPT_NEWS_ITEMS, PROMPT_SUMMARY_CHAR_LIMIT, include_basics=use_basics),
+        PromptBudget(3, 240, include_basics=use_basics),
+        PromptBudget(2, 180, include_basics=use_basics),
+        PromptBudget(1, 140, include_basics=False),
+    ]
+    deduped = []
+    seen = set()
+    for budget in budgets:
+        key = (budget.news_item_limit, budget.summary_char_limit, budget.include_basics)
+        if key not in seen:
+            deduped.append(budget)
+            seen.add(key)
+    return deduped
 
-    data = get_stock_data(ticker, steps)
-    data = get_news(ticker, data, week_mode=week_mode)
-    data["Weekly Returns"] = data.apply(
-        lambda row: (row["End Price"] - row["Start Price"]) / row["Start Price"] if row["Start Price"] else 0.0,
-        axis=1,
-    )
 
+def _count_prompt_tokens(prompt: str) -> int:
+    tokens = tokenizer(prompt, return_tensors="pt", padding=False)
+    return int(tokens["input_ids"].shape[-1])
+
+
+def _describe_summary_limit(limit: int) -> str:
+    return "full" if limit <= 0 else str(limit)
+
+
+def _build_prompt_from_data(
+    ticker,
+    curday,
+    n_weeks,
+    use_basics,
+    use_quant_signals,
+    week_mode,
+    data,
+    prompt_budget: PromptBudget,
+):
     market_symbol, market_name = _get_market_context(ticker)
     context = PromptContext(
         ticker=ticker,
@@ -1198,6 +1259,7 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals
         use_basics=use_basics,
         use_quant_signals=use_quant_signals,
         week_mode=week_mode,
+        prompt_budget=prompt_budget,
     )
 
     prompt = (
@@ -1209,8 +1271,55 @@ def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals
         .build()
     )
 
-    full_prompt = B_INST + B_SYS + SYSTEM_PROMPT + E_SYS + prompt + E_INST + "assistant\n"
-    return full_prompt
+    return B_INST + B_SYS + SYSTEM_PROMPT + E_SYS + prompt + E_INST + "assistant\n"
+
+
+def construct_prompt(ticker, curday, n_weeks, use_basics=True, use_quant_signals=True, week_mode="fri_fri"):
+    """Build the full prompt for the model and shrink it when needed."""
+    steps = [n_weeks_before(curday, n) for n in range(n_weeks + 1)][::-1]
+
+    data = get_stock_data(ticker, steps)
+    data = get_news(ticker, data, week_mode=week_mode)
+    data["Weekly Returns"] = data.apply(
+        lambda row: (row["End Price"] - row["Start Price"]) / row["Start Price"] if row["Start Price"] else 0.0,
+        axis=1,
+    )
+    budgets = _candidate_prompt_budgets(use_basics)
+
+    last_prompt = ""
+    last_tokens = 0
+    last_budget = budgets[-1]
+    for prompt_budget in budgets:
+        full_prompt = _build_prompt_from_data(
+            ticker,
+            curday,
+            n_weeks,
+            use_basics,
+            use_quant_signals,
+            week_mode,
+            data,
+            prompt_budget,
+        )
+        prompt_tokens = _count_prompt_tokens(full_prompt)
+        last_prompt = full_prompt
+        last_tokens = prompt_tokens
+        last_budget = prompt_budget
+        if prompt_tokens <= PROMPT_TOKEN_BUDGET:
+            print(
+                f"Prompt budget for {ticker}: {prompt_tokens} tokens "
+                f"(news={prompt_budget.news_item_limit}, summary_chars={_describe_summary_limit(prompt_budget.summary_char_limit)}, "
+                f"basics={'yes' if prompt_budget.include_basics else 'no'})",
+                flush=True,
+            )
+            return full_prompt
+
+    print(
+        f"Prompt still heavy for {ticker}: {last_tokens} tokens after compression "
+        f"(news={last_budget.news_item_limit}, summary_chars={_describe_summary_limit(last_budget.summary_char_limit)}, "
+        f"basics={'yes' if last_budget.include_basics else 'no'})",
+        flush=True,
+    )
+    return last_prompt
 
 
 # ============================================================================
@@ -1237,8 +1346,16 @@ def predict(ticker, prediction_date=None, n_weeks=3, use_basics=True, use_quant_
             "Reduce history/news or increase context window."
         )
 
-    max_new_tokens = min(max(config.max_new_tokens, 1024), available_tokens)
-    min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS)
+    max_new_tokens, min_completion_tokens = _resolve_generation_lengths(
+        input_len=input_len,
+        available_tokens=available_tokens,
+        config=config,
+    )
+    print(
+        f"Generation budget for {ticker}: prompt_tokens={input_len}, "
+        f"max_new_tokens={max_new_tokens}, min_completion_tokens={min_completion_tokens}",
+        flush=True,
+    )
     inputs = {key: value.to(model.device) for key, value in inputs.items()}
     attempts = [
         (config.temperature, min_completion_tokens),
@@ -1281,6 +1398,24 @@ def _build_generation_config(temperature):
         min_completion_tokens=MIN_COMPLETION_TOKENS,
         temperature=float(temperature),
     )
+
+
+def _resolve_generation_lengths(input_len: int, available_tokens: int, config: GenerationConfig) -> tuple[int, int]:
+    if input_len >= 9000:
+        hard_cap = 384
+    elif input_len >= 7000:
+        hard_cap = 448
+    elif input_len >= 5500:
+        hard_cap = 512
+    else:
+        hard_cap = 640
+
+    max_new_tokens = min(config.max_new_tokens, available_tokens, hard_cap)
+    if max_new_tokens <= 0:
+        raise ValueError("No completion budget left after prompt tokenization.")
+
+    min_completion_tokens = min(config.min_completion_tokens, SAFE_MIN_COMPLETION_TOKENS, max_new_tokens)
+    return max_new_tokens, min_completion_tokens
 
 
 def _get_context_limit():

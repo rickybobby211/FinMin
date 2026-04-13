@@ -5,6 +5,7 @@ import time
 import csv
 import io
 import re
+import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ import concurrent.futures
 
 # RunPod Configuration
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+MAX_PARALLEL_PREDICTION_JOBS = max(1, int(os.environ.get("MAX_PARALLEL_PREDICTION_JOBS", "2")))
 
 # Trained tickers (subset used in this project)
 TRAINED_TICKERS = [
@@ -1079,9 +1081,12 @@ def main():
 
             completed_jobs = 0
             total_jobs = len(jobs)
-            overall_status.text(f"Startar {total_jobs} AI-analyser parallellt...")
+            active_workers = min(total_jobs, MAX_PARALLEL_PREDICTION_JOBS)
+            overall_status.text(
+                f"Startar {total_jobs} AI-analyser med max {active_workers} samtidiga jobb..."
+            )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=active_workers) as executor:
                 future_to_job = {executor.submit(job_runner.run, job): job for job in jobs}
                 
                 for future in concurrent.futures.as_completed(future_to_job):
