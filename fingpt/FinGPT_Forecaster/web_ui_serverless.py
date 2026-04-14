@@ -5,7 +5,6 @@ import time
 import csv
 import io
 import re
-import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -15,11 +14,8 @@ import yfinance as yf
 # CONFIGURATION
 # ============================================================================
 
-import concurrent.futures
-
 # RunPod Configuration
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
-MAX_PARALLEL_PREDICTION_JOBS = max(1, int(os.environ.get("MAX_PARALLEL_PREDICTION_JOBS", "2")))
 
 # Trained tickers (subset used in this project)
 TRAINED_TICKERS = [
@@ -985,7 +981,7 @@ def main():
         
         st.markdown("---")
         st.markdown("### ⚙️ RunPod Endpoints")
-        st.info("Fyll i dina Serverless Endpoint ID:n nedan för parallell körning.")
+        st.info("Fyll i dina Serverless Endpoint ID:n nedan för att köra analyser via Serverless.")
         
         default_mon_fri = "lk1a8la6j92ey9"
         default_fri_fri = "4fbwlg7yhbwu2u"
@@ -1089,63 +1085,64 @@ def main():
 
             completed_jobs = 0
             total_jobs = len(jobs)
-            active_workers = min(total_jobs, MAX_PARALLEL_PREDICTION_JOBS)
             overall_status.text(
-                f"Startar {total_jobs} AI-analyser med max {active_workers} samtidiga jobb..."
+                f"Startar {total_jobs} AI-analyser sekventiellt..."
             )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=active_workers) as executor:
-                future_to_job = {executor.submit(job_runner.run, job): job for job in jobs}
-                
-                for future in concurrent.futures.as_completed(future_to_job):
-                    job = future_to_job[future]
-                    completed_jobs += 1
-                    overall_progress.progress(int((completed_jobs / total_jobs) * 100))
-                    overall_status.text(f"Färdigställer analys {completed_jobs}/{total_jobs} ({job.ticker} - {job.label})")
-                    
-                    try:
-                        result = future.result()
-                    except Exception as exc:
-                        result = {"error": str(exc)}
-                    
-                    if "error" in result:
-                        error_message = result["error"]
-                        st.session_state["prediction_errors"].append({
-                            "ticker": f"{job.ticker} ({job.label})",
-                            "error": error_message,
-                        })
-                        st.error(f"❌ {job.ticker} ({job.label}): {error_message}")
-                        if "details" in result:
-                            st.json(result["details"])
-                        continue
+            for job in jobs:
+                overall_status.text(
+                    f"Kör analys {completed_jobs + 1}/{total_jobs} ({job.ticker} - {job.label})"
+                )
 
-                    output = result.get("output", result)
-                    if isinstance(output, dict) and "error" in output:
-                        st.error(f"❌ Model Error ({job.label}): {output['error']}")
-                        continue
+                try:
+                    result = job_runner.run(job)
+                except Exception as exc:
+                    result = {"error": str(exc)}
 
-                    raw_text = output.get("prediction", "No prediction text returned.")
-                    resolved_ticker = output.get("ticker", job.ticker)
-                    resolved_date = output.get("date", prediction_date_str)
-                    adapter_used = output.get("adapter_used", "UNKNOWN")
-                    confidence_level = text_parser.extract_confidence_level(raw_text)
+                completed_jobs += 1
+                overall_progress.progress(int((completed_jobs / total_jobs) * 100))
+                overall_status.text(
+                    f"Färdigställde analys {completed_jobs}/{total_jobs} ({job.ticker} - {job.label})"
+                )
 
-                    st.session_state["prediction_results"].append({
-                        "ticker": f"{resolved_ticker} [{job.label}]",
-                        "date": resolved_date,
-                        "adapter": adapter_used,
-                        "prediction": raw_text,
-                        "confidence_level": confidence_level,
-                        "raw_result": result
+                if "error" in result:
+                    error_message = result["error"]
+                    st.session_state["prediction_errors"].append({
+                        "ticker": f"{job.ticker} ({job.label})",
+                        "error": error_message,
                     })
+                    st.error(f"❌ {job.ticker} ({job.label}): {error_message}")
+                    if "details" in result:
+                        st.json(result["details"])
+                    continue
 
-                    saved_path, save_error = result_repository.append(
-                        prediction_date=f"{resolved_date}_{job.label.replace(' ', '_')}",
-                        ticker=resolved_ticker,
-                        prediction_text=raw_text,
-                        confidence_level=confidence_level,
-                        adapter=adapter_used,
-                    )
+                output = result.get("output", result)
+                if isinstance(output, dict) and "error" in output:
+                    st.error(f"❌ Model Error ({job.label}): {output['error']}")
+                    continue
+
+                raw_text = output.get("prediction", "No prediction text returned.")
+                resolved_ticker = output.get("ticker", job.ticker)
+                resolved_date = output.get("date", prediction_date_str)
+                adapter_used = output.get("adapter_used", "UNKNOWN")
+                confidence_level = text_parser.extract_confidence_level(raw_text)
+
+                st.session_state["prediction_results"].append({
+                    "ticker": f"{resolved_ticker} [{job.label}]",
+                    "date": resolved_date,
+                    "adapter": adapter_used,
+                    "prediction": raw_text,
+                    "confidence_level": confidence_level,
+                    "raw_result": result
+                })
+
+                saved_path, save_error = result_repository.append(
+                    prediction_date=f"{resolved_date}_{job.label.replace(' ', '_')}",
+                    ticker=resolved_ticker,
+                    prediction_text=raw_text,
+                    confidence_level=confidence_level,
+                    adapter=adapter_used,
+                )
 
             if save_error:
                 st.warning(f"Could not spara resultat på disk: {save_error}")
