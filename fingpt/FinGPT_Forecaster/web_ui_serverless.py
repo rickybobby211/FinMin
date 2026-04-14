@@ -989,19 +989,22 @@ def main():
         
         default_mon_fri = "lk1a8la6j92ey9"
         default_fri_fri = "4fbwlg7yhbwu2u"
+        default_fri_fri_alt = "too2berl87wzmr"
         
         try:
             default_mon_fri = st.secrets.get("RUNPOD_ID_MON_FRI", default_mon_fri)
             default_fri_fri = st.secrets.get("RUNPOD_ID_FRI_FRI", default_fri_fri)
+            default_fri_fri_alt = st.secrets.get("RUNPOD_ID_FRI_FRI_ALT", default_fri_fri_alt)
         except Exception:
             pass
             
         runpod_id_mon_fri = st.text_input("Endpoint ID (Mån-Fre)", value=default_mon_fri)
         runpod_id_fri_fri = st.text_input("Endpoint ID (Fre-Fre)", value=default_fri_fri)
+        runpod_id_fri_fri_alt = st.text_input("Endpoint ID (Fre-Fre 2)", value=default_fri_fri_alt)
         
         run_mode = st.radio(
             "Välj Körläge",
-            options=["Endast Mån-Fre", "Endast Fre-Fre"],
+            options=["Endast Mån-Fre", "Endast Fre-Fre", "Endast Fre-Fre 2"],
             index=1
         )
 
@@ -1059,6 +1062,11 @@ def main():
                     endpoints.append((f"https://api.runpod.ai/v2/{runpod_id_fri_fri}", "Fre-Fre", "fri_fri"))
                 else:
                     st.warning("Saknar giltigt Endpoint ID för Fre-Fre!")
+            if run_mode in ["Endast Fre-Fre 2", "Kör båda parallellt!"]:
+                if runpod_id_fri_fri_alt and runpod_id_fri_fri_alt != "DITT_FRI_FRI_2_ID":
+                    endpoints.append((f"https://api.runpod.ai/v2/{runpod_id_fri_fri_alt}", "Fre-Fre 2", "fri_fri"))
+                else:
+                    st.warning("Saknar giltigt Endpoint ID för Fre-Fre 2!")
 
             if not endpoints:
                 st.error("Inga giltiga endpoints konfigurerade. Avbryter.")
